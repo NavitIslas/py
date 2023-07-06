@@ -1,0 +1,220 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Tabla de dominios gamer por mes
+
+# ## Instalar librerias
+
+# In[1]:
+
+
+pip install awswrangler
+
+
+# ## Importtar librerias
+
+# In[2]:
+
+
+import numpy as np
+from datetime import datetime
+import awswrangler as wr
+import pandas as pd
+
+
+# ## Conexión a Redshift
+
+# In[3]:
+
+
+con = wr.redshift.connect("redshift_devsie")
+
+
+# ## Variables
+
+# In[4]:
+
+
+meses_list=["enero", "febrero"]
+fecha_inicio=[20230101,20230201]
+fecha_termino=[20230131,20230228]
+anio=2023
+
+
+# In[6]:
+
+
+print(f'dominios_gamer_{mes}_{anio}')
+
+
+# ## creacion de tablas publicas
+
+# In[5]:
+
+
+for mes, fechai, fechat in zip(meses_list, fecha_inicio, fecha_termino):
+    import time
+    inicio = time.time()
+    print(f"Inicio de cración de la tabla: dominios_gamer_{mes}_{anio}, con fecha de inicio: {fechai} y fecha de termino: {fechat}")
+    sql_tabla = f"""CREATE TABLE public.dominios_gamer_{mes}_{anio} AS (
+                    SELECT cuenta, COUNT(*) AS dominios_visitados, SUM(xbox) AS xbox, SUM(nintendo) AS nintendo, SUM(playstation) AS playstation,
+                           SUM(foros_de_videojuegos) AS foros_de_videojuegos, SUM(pc_gamer) AS pc_gamer, SUM(streaming) AS streaming,
+                           SUM(venta_de_videojuegos) AS venta_de_videojuegos,
+                           SUM(xbox) + SUM(nintendo) + SUM(playstation) + SUM(foros_de_videojuegos) + SUM(pc_gamer) + SUM(streaming)+ SUM(venta_de_videojuegos) AS dominios_gamer_visitados,
+                           (dominios_gamer_visitados*(100.00))/ dominios_visitados AS nivel_gamer
+                    FROM(SELECT cuenta, core_domain,
+                               CASE WHEN core_domain LIKE '%xbox.com%'
+                                         OR core_domain LIKE '%xbox-now.com%' THEN 1
+                                    ELSE 0
+                               END xbox,
+                               CASE WHEN core_domain LIKE '%nintendo.com%'
+                                    OR core_domain LIKE '%nintendo.es%' THEN 1
+                                    ELSE 0
+                               END nintendo,
+                               CASE WHEN core_domain LIKE '%playstation.com%'
+                                    OR core_domain LIKE '%playstationlifestyle.net%' THEN 1
+                                    ELSE 0
+                               END playstation,
+                               CASE WHEN core_domain LIKE '%steamcommunity.com%'
+                                    OR core_domain LIKE '%ign.com%'
+                                    OR core_domain LIKE '%gamespot.com%'
+                                    OR core_domain LIKE '%ea.com%'
+                                    OR core_domain LIKE '%gamerant.com%'
+                                    OR core_domain LIKE '%gamesradar.com%'
+                                    OR core_domain LIKE '%minecraft.net%'
+                                    OR core_domain LIKE '%pcgamer.com%'
+                                    OR core_domain LIKE '%trueachievements.com%'
+                                    OR core_domain LIKE '%gocdkeys.com%'
+                                    OR core_domain LIKE '%goclecd.fr%'
+                                    OR core_domain LIKE '%gg.deals%'
+                                    OR core_domain LIKE '%cheapdigitaldownload.com%'
+                                    OR core_domain LIKE '%cdkeyprices.com%'
+                                    OR core_domain LIKE '%itch.io%'
+                                    OR core_domain LIKE '%steamgifts.com%'
+                                    OR core_domain LIKE '%indiegamebundles.com%'
+                                    OR core_domain LIKE '%epicbundle.com%'
+                                    OR core_domain LIKE '%steampricehistory.com%'
+                                    OR core_domain LIKE '%rockpapershotgun.com%'
+                                    OR core_domain LIKE '%polygon.com%'
+                                    OR core_domain LIKE '%eurogamer.net%'
+                                    OR core_domain LIKE '%kotaku.com%'
+                                    OR core_domain LIKE '%steamdb.info%'
+                                    OR core_domain LIKE '%mobalytics.gg%'
+                                    OR core_domain LIKE '%pockettactics.com%'
+                                    OR core_domain LIKE '%vg247.com%'
+                                    OR core_domain LIKE '%pcgamesn.com%'
+                                    OR core_domain LIKE '%theloadout.com%'
+                                    OR core_domain LIKE '%destructoid.com%'
+                                    OR core_domain LIKE '%minecraftshader.com%'
+                                    OR core_domain LIKE '%quartertothree.com %'
+                                    OR core_domain LIKE '%tigsource.com%'
+                                    OR core_domain LIKE '%gamerswithjobs.com%'
+                                    OR core_domain LIKE '%unwinnable.com%'
+                                    OR core_domain LIKE '%rpgcodex.net%'
+                                    OR core_domain LIKE '%therewillbe.games%'
+                                    OR core_domain LIKE '%projectzomboid.com%'
+                                    OR core_domain LIKE '%brokenforum.com%'
+                                    OR core_domain LIKE '%estarland.com%'
+                                    OR core_domain LIKE '%mobygames.com%'
+                                    OR core_domain LIKE '%gamevaluenow.com%'
+                                    OR core_domain LIKE '%vgboxart.com%'
+                                    OR core_domain LIKE '%indoorgamebunker.com%'
+                                    OR core_domain LIKE '%famitsu.com%'
+                                    OR core_domain LIKE '%psnprofiles.com%'
+                                    OR core_domain LIKE '%pushsquare.com%'
+                                    OR core_domain LIKE '%videogameschronicle.com%'
+                                    OR core_domain LIKE '%sega.com%'
+                                    OR core_domain LIKE '%hobbyconsolas.com%'
+                                    OR core_domain LIKE '%vidaextra.com%'
+                                    OR core_domain LIKE '%elotrolado.net%'
+                                    OR core_domain LIKE '%atomix.vg%'
+                                    OR core_domain LIKE '%halowaypoint.com%'
+                                    OR core_domain LIKE'%gamerstyle.com.mx%'
+                                    OR core_domain LIKE '%levelup.com%'
+                                    OR core_domain LIKE '%gamersunite.mx%'
+                                    OR core_domain LIKE '%geekzilla.tech%'
+                                    OR core_domain LIKE '%gamingcoffee.com%'
+                                    OR core_domain LIKE '%tierragamer.com%'
+                                    OR core_domain LIKE '%regionps.com%'
+                                    OR core_domain LIKE '%naturalborngamers.it%'
+                                    OR core_domain LIKE '%gamenews.es%'
+                                    OR core_domain LIKE '%ligadegamers.com%'
+                                    OR core_domain LIKE '%topg.org%'
+                                    OR core_domain LIKE '%servidoresdeminecraft.es%'
+                                    OR core_domain LIKE '%tecnologiailimitada.com%' THEN 1
+                                    ELSE 0
+                               END foros_de_videojuegos,
+                               CASE WHEN core_domain LIKE '%epicgames.com%'    
+                                    OR core_domain LIKE '%gog.com%'
+                                    OR core_domain LIKE '%g2a.com%'
+                                    OR core_domain LIKE '%fanatical.com%'
+                                    OR core_domain LIKE '%nexusmods.com%'
+                                    OR core_domain LIKE '%gamebillet.com%'
+                                    OR core_domain LIKE '%gamerpower.com%'
+                                    OR core_domain LIKE '%cheapshark.com%'
+                                    OR core_domain LIKE '%moddb.com%'
+                                    OR core_domain LIKE '%rpcs3.net%'
+                                    OR core_domain LIKE '%spartangeek.com%'
+                                    OR core_domain LIKE '%capcut.net%'
+                                    OR core_domain LIKE '%jam.gg%'
+                                    OR core_domain LIKE '%maximus.com.ar%'
+                                    OR core_domain LIKE '%speedlogic.com.co%'
+                                    OR core_domain LIKE '%descargarpcjuegos.com%'
+                                    OR core_domain LIKE '%lutear.com%'
+                                    OR core_domain LIKE '%gamebra.com%'
+                                    OR core_domain LIKE '%juegosonlinegratis.com.mx%' THEN 1
+                                    ELSE 0
+                               END pc_gamer,
+                               CASE WHEN core_domain LIKE '%twitch.tv%' THEN 1
+                                    ELSE 0
+                               END streaming,
+                               CASE WHEN core_domain LIKE '%gamestop.com%'
+                                    OR core_domain LIKE '%eneba.com%'
+                                    OR core_domain LIKE '%instant-gaming.com%'
+                                    OR core_domain LIKE '%cdkeys.com%'
+                                    OR core_domain LIKE '%kinguin.net%'
+                                    OR core_domain LIKE '%allkeyshop.com%'
+                                    OR core_domain LIKE '%dlcompare.fr%'
+                                    OR core_domain LIKE '%gamivo.com%'
+                                    OR core_domain LIKE '%keyforsteam.de%'
+                                    OR core_domain LIKE '%hrkgame.com%'
+                                    OR core_domain LIKE '%xxlgamer.com%'
+                                    OR core_domain LIKE '%dlcompare.com%'
+                                    OR core_domain LIKE '%humblebundle.com%'
+                                    OR core_domain LIKE '%greenmangaming.com%'
+                                    OR core_domain LIKE '%indiegala.com%'
+                                    OR core_domain LIKE '%isthereanydeal.com%'
+                                    OR core_domain LIKE '%dkoldies.com%'
+                                    OR core_domain LIKE '%play-asia.com%'
+                                    OR core_domain LIKE '%shopto.net%'
+                                    OR core_domain LIKE '%lukiegames.com%'
+                                    OR core_domain LIKE '%vgchartz.com%'
+                                    OR core_domain LIKE '%shopville.ca%'
+                                    OR core_domain LIKE '%gameplanet.com%'
+                                    OR core_domain LIKE '%weplay.cl%'
+                                    OR core_domain LIKE '%claners.com%'
+                                    OR core_domain LIKE '%nsw2u.xyz%'
+                                    OR core_domain LIKE '%retroplace.com%'
+                                    OR core_domain LIKE '%gameside.es%'
+                                    OR core_domain LIKE '%spacegamer.com.ar%' THEN 1
+                                    ELSE 0
+                               END venta_de_videojuegos       
+                        FROM  navegacion.client_address_cta
+                        WHERE info_day between {fechai} and  {fechat})
+                    GROUP BY cuenta;
+                       """
+
+
+
+    conn = wr.redshift.connect("redshift_devsie")
+
+    with conn.cursor() as cursor:
+        cursor.execute(sql_tabla)
+        cursor.execute("commit;")
+        #print(cursor.fetchall()) solo para imprimir el resultado
+    conn.close()
+    print(f"Termino de crearse la tabla: dominios_gamer_{mes}_{anio}, con fecha de inicio: {fechai} y fecha de termino: {fechat}")
+    fin = time.time()
+    tiempo=fin-inicio
+    print(f"Tiempo de ejecución de la tabla dominios_gamer_{mes}_{anio}:  {tiempo} ")  
+              
