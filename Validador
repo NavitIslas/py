@@ -1,0 +1,176 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Validador
+
+# ## Instalar librerias
+
+# In[1]:
+
+
+pip install awswrangler
+
+
+# In[2]:
+
+
+get_ipython().system('pip install odfpy')
+
+
+# ## Importar librerias
+
+# In[3]:
+
+
+import numpy as np
+from datetime import datetime
+import awswrangler as wr
+import pandas as pd
+import calendar
+from datetime import datetime
+
+
+# ## Conexion a redshift
+
+# In[4]:
+
+
+con = wr.redshift.connect("redshift_devsie")
+conn_aurora = wr.postgresql.connect("cctp_sandbox_aurora_master_instance")
+con_redshift_2 = wr.redshift.connect("redshift_cctp_bi")
+
+
+# ## Validación de tabla slf_opportunity
+
+# ### empleado
+
+# In[5]:
+
+
+sql_ctas_opportunity = "select count(DISTINCT empleado__c) from staging_layer.ta_slf_opportunity "
+sql_opportunity = wr.redshift.read_sql_query(sql_ctas_opportunity, con)
+
+
+# In[6]:
+
+
+sql_opportunity
+
+
+# ### oportunidad
+
+# In[7]:
+
+
+sql_ctas_opportunity_op = "select count(*) from staging_layer.ta_slf_opportunity "
+sql_opportunity_op = wr.redshift.read_sql_query(sql_ctas_opportunity_op, con)
+sql_opportunity_op
+
+
+# ## Validación de tabla slf_cuentafactura__c
+
+# ### folio_venta
+
+# In[8]:
+
+
+sql_ctas_cuentafactura__c = "select count(*), info_day from data_staging.ta_slf_cuentafactura__c where info_day  between 20230101 and 20231231  group by info_day order by info_day asc"
+sql_slf_cuentafactura__c = wr.redshift.read_sql_query(sql_ctas_cuentafactura__c, con)
+sql_slf_cuentafactura__c
+
+
+# In[9]:
+
+
+sql_slf_cuentafactura__c['count'].min().round()
+
+
+# ### cuentas
+
+# In[10]:
+
+
+sql_ctas_cuentafactura__cuenta = "select count(DISTINCT idcuentabrm__c), info_day from data_staging.ta_slf_cuentafactura__c where info_day  between 20230101 and 20231231  group by info_day order by info_day asc"
+sql_cuentafactura__cuenta  = wr.redshift.read_sql_query(sql_ctas_cuentafactura__cuenta, con)
+sql_cuentafactura__cuenta
+
+
+# In[11]:
+
+
+sql_cuentafactura__cuenta['count'].min().round()
+
+
+# ## Validación de tabla slf_empleado
+
+# In[12]:
+
+
+sql_ctas_slf_empleado = "select count(DISTINCT id) from data_staging.slf_empleado__c "
+sql_slf_empleado  = wr.redshift.read_sql_query(sql_ctas_slf_empleado, con)
+sql_slf_empleado
+
+
+# ## Validación de tabla brm_account_t
+
+# In[13]:
+
+
+sql_ctas_brm_account_t = "select count(DISTINCT account_no), info_day from data_staging.brm_account_t where info_day  between 20230101 and 20231231  group by info_day order by info_day asc"
+sql_brm_account_t  = wr.redshift.read_sql_query(sql_ctas_brm_account_t, con)
+sql_brm_account_t
+
+
+# In[14]:
+
+
+sql_brm_account_t['count'].min().round()
+
+
+# ## Validacion black_box.cartera
+
+# In[15]:
+
+
+sql_ctas_cartera = "select count(DISTINCT cuenta), info_day from black_box.cartera where info_day  between 20230101 and 20231231  group by info_day order by info_day asc"
+sql_cartera  = wr.redshift.read_sql_query(sql_ctas_cartera, con)
+sql_cartera
+
+
+# In[16]:
+
+
+sql_cartera['count'].min().round()
+
+
+# ## Validación data_lake.nse
+
+# In[17]:
+
+
+sql_ctas_nse = "select count(DISTINCT cuenta), info_day from data_lake.nse where info_day  between 20230101 and 20231231  group by info_day order by info_day asc"
+sql_nse  = wr.redshift.read_sql_query(sql_ctas_nse, con)
+sql_nse
+
+
+# In[18]:
+
+
+sql_nse['count'].min().round()
+
+
+# ## Validación bi.ds_edad_genero
+
+# In[29]:
+
+
+sql_ctas_ds_edad_genero = "select count(DISTINCT cuenta) from bi.ds_edad_genero"
+sql_ds_edad_genero  = wr.redshift.read_sql_query(sql_ctas_ds_edad_genero, con)
+sql_ds_edad_genero
+
+
+# In[ ]:
+
+
+validation_dict = {'opportunity_empleado': 71_494, 'opportunity_oportunidad': 13_363_488,'cuentafactura_cuenta': 9_611_459, 'cuentafactura_folio': 9_611_512, 'empleado': 133_323, 'brm':6_701_662,'cartera':6411922 }
+
