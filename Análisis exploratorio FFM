@@ -1,0 +1,410 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Análisis Exploratorio FFM
+
+# ## Importar librerias
+
+# In[1]:
+
+
+import numpy as np
+from datetime import datetime
+from datetime import timedelta
+import pandas as pd
+import awswrangler as wr
+import matplotlib.pyplot as plt
+import plotly.express as px
+
+
+# ## Leer la base
+
+# In[2]:
+
+
+df = pd.read_csv("2023-06-14DATOS.csv")
+df
+
+
+# ## Calculo de la media, mediana, moda, desviación estandar y rango intercuartilico de la variable Cantidad
+
+# In[3]:
+
+
+base=df[['Cantidad']]
+base
+
+
+# In[4]:
+
+
+cantidad_media=base.mean()
+print("cantidad_media=",cantidad_media)
+
+
+# In[5]:
+
+
+cantidad_mediana=base.median()
+print("cantidad_mediana=",cantidad_mediana)
+
+
+# In[6]:
+
+
+cantidad_moda=base.mode()
+print("cantidad_moda=",cantidad_moda)
+
+
+# In[7]:
+
+
+cantidad_desviacion_estandar=base.std()
+print("cantidad_desviacion_estandar=",cantidad_desviacion_estandar)
+
+
+# In[8]:
+
+
+cantidad_rango_intercuartilico=base.quantile(0.75) - base.quantile(0.25)
+print("cantidad_rango_intercuartilico=",cantidad_rango_intercuartilico)
+
+
+# ## Histograma y diagrama de caja de la variable Cantidad
+
+# In[9]:
+
+
+# Calculate the histogram
+base.hist()
+
+# Display the histogram
+plt.show()
+
+
+# In[10]:
+
+
+# Calculate the box plot
+base.boxplot()
+
+# Display the box plot
+plt.show()
+
+
+# ## Graficas de barras
+
+# In[11]:
+
+
+df1=df[['GEOCERCA','DCTO_ID_TIPO']]
+df1
+
+
+# In[12]:
+
+
+g1 = df1.groupby('GEOCERCA').size().reset_index(name='count').sort_values('count', ascending=False) 
+g1
+
+
+# In[13]:
+
+
+g1 = g1.set_index('GEOCERCA')
+g1
+
+
+# In[14]:
+
+
+g1.plot(kind = 'bar');
+plt.xlabel('GEOCERCA')
+plt.ylabel("Descuentos")
+plt.title("Cuantas cuentas tienen descuentos por Geocerca", size=18)
+
+
+# In[15]:
+
+
+df2=df[['GEOCERCA','Cantidad']]
+df2
+
+
+# In[16]:
+
+
+g2 = df2.groupby('GEOCERCA').sum()
+g2
+
+
+# In[17]:
+
+
+g2=g2.sort_values('Cantidad', ascending=False)
+g2
+
+
+# In[18]:
+
+
+g2.plot(kind = 'bar');
+plt.xlabel('GEOCERCA')
+plt.ylabel("Descuentos")
+plt.title("Total de descuentos por Geocerca", size=18)
+
+
+# In[19]:
+
+
+df3=df[['DCTO_NOMBRE','DCTO_ID_TIPO']]
+df3
+
+
+# In[20]:
+
+
+g3 = df3.groupby('DCTO_NOMBRE').size().reset_index(name='count').sort_values('count', ascending=False) 
+g3
+
+
+# In[21]:
+
+
+g3 = g3.set_index('DCTO_NOMBRE')
+g3
+
+
+# In[22]:
+
+
+g3.plot(kind = 'bar');
+plt.xlabel('DCTO_NOMBRE')
+plt.ylabel("Descuentos")
+plt.title("Cuantos descuentos hay por DCTO_NOMBRE", size=18)
+
+
+# In[23]:
+
+
+df4=df[['DCTO_NOMBRE_1','DCTO_ID_TIPO']]
+df4
+
+
+# In[24]:
+
+
+g4 = df4.groupby('DCTO_NOMBRE_1').size().reset_index(name='count').sort_values('count', ascending=False) 
+g4
+
+
+# In[25]:
+
+
+g4_more=g4.head(10)
+g4_more
+                
+
+
+# In[26]:
+
+
+g4_more = g4_more.set_index('DCTO_NOMBRE_1')
+g4_more
+
+
+# In[27]:
+
+
+g4_more.plot(kind = 'bar');
+plt.xlabel('DCTO_NOMBRE_1')
+plt.ylabel("Descuentos")
+plt.title("Top de los DCTO_NOMBRE_1 que cuentan con más cantidad de descuentos", size=18)
+
+
+# In[28]:
+
+
+g5 = df4.groupby('DCTO_NOMBRE_1').size().reset_index(name='count').sort_values('count', ascending=True) 
+g5
+
+
+# In[29]:
+
+
+g5_less=g5.head(10)
+g5_less
+
+
+# In[30]:
+
+
+g5_less = g5_less.set_index('DCTO_NOMBRE_1')
+g5_less
+
+
+# In[31]:
+
+
+g5_less.plot(kind = 'bar');
+plt.xlabel('DCTO_NOMBRE_1')
+plt.ylabel("Descuentos")
+plt.title("Top de los DCTO_NOMBRE_1 que cuentan con menos cantidad de descuentos", size=18)
+
+
+# ## Ver que tipo de datos tienen los registros de la base
+
+# In[32]:
+
+
+df.info()
+
+
+# ## Cambiar las columnas AAAA, MM, DD de tipo int a string para poder concatenarlos
+
+# In[33]:
+
+
+df = df.astype({'AAAA':'string'})
+
+
+# In[34]:
+
+
+df = df.astype({'MM':'string'})
+
+
+# In[35]:
+
+
+df = df.astype({'DD':'string'})
+
+
+# In[36]:
+
+
+df.info()
+
+
+# ## Crear la columna Fecha a través de concatenar las columnas AAAA, MM, DD
+
+# ### Concatenar la columna AAAA Y la columna MM
+
+# In[37]:
+
+
+df["Fecha"] = df[["AAAA", "MM"]].apply("-".join, axis=1)
+df
+
+
+# ### Concatenar la columna MM Y la columna DD
+
+# In[38]:
+
+
+df["Fecha"] = df[["Fecha", "DD"]].apply("-".join, axis=1)
+df
+
+
+# ## Llenar columna Distrito_padre 
+
+# In[39]:
+
+
+def distrito(df: pd.DataFrame):
+    #Le agregamos el campo texto a nuestro dataframe 
+    df['GEOCERCA_PADRE'] = None
+    for index, row in df.iterrows():
+            geocerca=row['GEOCERCA']      
+            if geocerca =='DISTRITO 4' or geocerca =='DISTRITO 4_B':
+                df.loc[index,'GEOCERCA_PADRE']= 'DISTRITO 4'
+            else:
+                if geocerca =='DISTRITO 5 A' or geocerca =='DISTRITO 5.B':
+                    df.loc[index,'GEOCERCA_PADRE']= 'DISTRITO 5'
+                else:
+                    if geocerca =='ACAPULCO G' or geocerca =='ACAPULCO G 2':
+                        df.loc[index,'GEOCERCA_PADRE']= 'ACAPULCO G'
+    return df
+
+
+# In[40]:
+
+
+df6= distrito(df)
+df6
+
+
+# ## Ver que tipo de datos tienen los registros de la base
+
+# In[41]:
+
+
+df.info()
+
+
+# ## Cambiar las columnas GEOCERCA_PADRE, GEOCERCA, DCTO_ID_TIPO y DCTO_ID_SUBTIPO de tipo int a string para poder concatenarlos
+
+# In[42]:
+
+
+df6 = df6.astype({'GEOCERCA_PADRE':'string'})
+df6 = df6.astype({'GEOCERCA':'string'})
+df6 = df6.astype({'DCTO_ID_TIPO':'string'})
+df6 = df6.astype({'DCTO_ID_SUBTIPO':'string'})
+
+
+# In[43]:
+
+
+df6.info()
+
+
+# In[44]:
+
+
+df7=df6[['GEOCERCA_PADRE','GEOCERCA','DCTO_ID_TIPO','DCTO_ID_SUBTIPO']]
+df7
+
+
+# In[45]:
+
+
+df8 = df7.groupby(['GEOCERCA_PADRE','GEOCERCA','DCTO_ID_TIPO','DCTO_ID_SUBTIPO']).size().reset_index(name='count')
+df8
+
+
+# In[46]:
+
+
+## Nos traemos los registros que tienen GEOCERCA_PADRE= DISTRITO 4
+
+
+# In[47]:
+
+
+df9 = df8[df8['GEOCERCA_PADRE'] == 'ACA']
+df9
+
+
+# In[48]:
+
+
+df9 = df8[df8['GEOCERCA_PADRE'].isin(['ACAPULCO G'])]
+df9
+
+
+# In[49]:
+
+
+# determining the name of the file
+Prueba 1 = 'MarksData.xlsx'
+  
+# saving the excel
+df9.to_excel(file_name)
+
+
+# In[ ]:
+
+
+
+
