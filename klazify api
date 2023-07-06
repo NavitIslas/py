@@ -1,0 +1,43 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[16]:
+
+
+import requests
+import json
+
+
+# In[17]:
+
+
+url = 'https://www.klazify.com/api/categorize'
+payload = {'url': 'https://www.netflix.com/mx/'}
+headers = {'Accept' : 'application/json', 'Content-Type': 'application/json', 'Authorization': 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiIxIiwianRpIjoiYWFhZjdkMzUzYWRhMWQ4MWFmZTg5OWJlY2NlZjkwODcwOTZmZDk1ZDU1MzY2ZTkxYmE3M2YyNDc2Y2Y2ZGZhMDdlZmNhOWZjMDA0ZGQyNzAiLCJpYXQiOjE2Nzc1Mjg3MzIsIm5iZiI6MTY3NzUyODczMiwiZXhwIjoxNzA5MDY0NzMyLCJzdWIiOiIxMDE3MyIsInNjb3BlcyI6W119.VGRn5Cc7nC1hTovWu5OaMB08dlSG0dm3B4tLcjhACSr2pc1JcOD5Hk-qw3VOMVmFbtaV3ym3aYufEzIplSzGgA',  'cache-control': 'no-cache'}
+response = requests.post(url, data=payload, headers=headers)
+print(response)
+
+
+# In[25]:
+
+
+import requests
+url = "https://www.klazify.com/api/categorize"
+                
+payload = "{\"url\":\"https://www.bancoazteca.com.mx/\"}\n"
+headers = {
+           'Accept': "application/json",
+           'Content-Type': "application/json",
+           'Authorization': "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiIxIiwianRpIjoiYWFhZjdkMzUzYWRhMWQ4MWFmZTg5OWJlY2NlZjkwODcwOTZmZDk1ZDU1MzY2ZTkxYmE3M2YyNDc2Y2Y2ZGZhMDdlZmNhOWZjMDA0ZGQyNzAiLCJpYXQiOjE2Nzc1Mjg3MzIsIm5iZiI6MTY3NzUyODczMiwiZXhwIjoxNzA5MDY0NzMyLCJzdWIiOiIxMDE3MyIsInNjb3BlcyI6W119.VGRn5Cc7nC1hTovWu5OaMB08dlSG0dm3B4tLcjhACSr2pc1JcOD5Hk-qw3VOMVmFbtaV3ym3aYufEzIplSzGgA",
+           'cache-control': "no-cache"
+}
+response = requests.request("POST", url, data=payload, headers=headers)
+                
+print(response.text)
+
+
+
+
+
+
+
