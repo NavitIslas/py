@@ -1,0 +1,219 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # tabla: vendedores_primero
+
+# ## Instalar librerias
+
+# In[2]:
+
+
+pip install awswrangler
+
+
+# In[3]:
+
+
+get_ipython().system('pip install odfpy')
+
+
+# ## Importar librerias
+
+# In[4]:
+
+
+import numpy as np
+from datetime import datetime
+import awswrangler as wr
+import pandas as pd
+import calendar
+from datetime import datetime
+
+
+# ## Conexion a redshift
+
+# In[5]:
+
+
+con = wr.redshift.connect("redshift_devsie")
+conn_aurora = wr.postgresql.connect("cctp_sandbox_aurora_master_instance")
+con_redshift_2 = wr.redshift.connect("redshift_cctp_bi")
+
+
+# ## Variables para la creación de las tablas
+
+# In[6]:
+
+
+info_day_slf_cuentafactura__c = 20230221
+info_day_slf_empleado__c = 20230221
+info_day_brm_account_t = 20230221
+info_day_cartera = 20230221
+partition_ds_cobertura = 202301
+partition_ds_planes_homologados='202301'
+mes = "febrero"
+anio = 2023
+
+
+# ## Validadores
+
+# In[7]:
+
+
+sql_ctas_opportunity = "select count(DISTINCT empleado__c) from staging_layer.ta_slf_opportunity "
+sql_empleados = wr.redshift.read_sql_query(sql_ctas_opportunity, con)
+sql_ctas_opportunity_op = "select count(*) from staging_layer.ta_slf_opportunity "
+sql_oportunidades = wr.redshift.read_sql_query(sql_ctas_opportunity_op, con)
+sql_ctas_cuentafactura__c =f"""select count(*) from data_staging.ta_slf_cuentafactura__c where info_day={info_day_slf_cuentafactura__c}"""
+sql_cf_folio_venta = wr.redshift.read_sql_query(sql_ctas_cuentafactura__c, con)
+sql_ctas_cuentafactura__cuenta =f"""select count(DISTINCT idcuentabrm__c) from data_staging.ta_slf_cuentafactura__c where info_day={info_day_slf_cuentafactura__c}"""
+sql_cuenta_factura_cuentas  = wr.redshift.read_sql_query(sql_ctas_cuentafactura__cuenta, con)
+sql_ctas_slf_empleado =f"""select count(DISTINCT id) from data_staging.slf_empleado__c """
+sql_slf_empleado  = wr.redshift.read_sql_query(sql_ctas_slf_empleado, con)
+sql_ctas_brm_account_t =f"""select count(DISTINCT account_no) from data_staging.brm_account_t where info_day={info_day_brm_account_t} """
+sql_brm_account_t  = wr.redshift.read_sql_query(sql_ctas_brm_account_t, con)
+
+
+# ## Creación de tabla vendedores primero
+
+# In[9]:
+
+
+if sql_empleados.iloc[0,0]>=71494:
+    if sql_oportunidades.iloc[0,0]>=13363488:
+        if sql_cf_folio_venta.iloc[0,0]>=9611512:
+            if sql_cuenta_factura_cuentas.iloc[0,0]>=9611459:
+                if sql_slf_empleado.iloc[0,0]>=133323:
+                    if sql_brm_account_t.iloc[0,0]>=6701662:
+                        import time
+                        inicio = time.time()
+                        print(f"Inicio de cración de la tabla: vendedores_primero_{mes}_{anio}")
+                        sql_tabla_vendedores_primero = f""" create table public.vendedores_primero_{mes}_{anio} as (
+                                                                        select
+                                                                            op.numerooportunidad__c as oportunidad,
+                                                                            cf.idcuentabrm__c as cuenta,
+                                                                            e.id as id_empleado,
+                                                                            e.name as empleado,
+                                                                            op.type tipo,
+                                                                        case
+                                                                                when ac.account_no is null then 'NO'
+                                                                                else 'SI'
+                                                                            end as ganada,
+                                                                            e.id,
+                                                                        e.name,
+                                                                        e.tipopersonal__c,
+                                                                        e.estatus__c ,
+                                                                        e.folioempleado__c ,
+                                                                        e.noempleado__c,
+                                                                        e.posicion__c ,
+                                                                        e.canal__c ,
+                                                                        e.subcanal__c,
+                                                                        e.grupodistribuidor__c,
+                                                                        e.distribuidor__c,
+                                                                        e.correoelectronico__c,
+                                                                        e.movil__c,
+                                                                        e.plaza__c
+                                                                        from
+                                                                            (
+                                                                            select
+                                                                                numerooportunidad__c,
+                                                                                empleado__c,
+                                                                                closedate,
+                                                                                stagename,
+                                                                                type
+                                                                            from
+                                                                                staging_layer.ta_slf_opportunity
+                                                                            where
+                                                                                empleado__c is not null
+                                                                                and empleado__c != ''
+                                                                                                 ) as op
+                                                                        join (
+                                                                            select
+                                                                                idcuentabrm__c,
+                                                                                folioventa__c
+                                                                            from
+                                                                                data_staging.ta_slf_cuentafactura__c
+                                                                            where
+                                                                                info_day in (select max(info_day) from data_staging.ta_slf_cuentafactura__c )
+                                                                                                ) as cf
+                                                                                          on
+                                                                            op.numerooportunidad__c = cf.folioventa__c                                                    
+                                                                        join (
+                                                                            select
+                                                                                id,
+                                                                        name,
+                                                                        tipopersonal__c,
+                                                                        estatus__c ,
+                                                                        folioempleado__c ,
+                                                                        noempleado__c,
+                                                                        posicion__c ,
+                                                                        canal__c ,
+                                                                        subcanal__c,
+                                                                        grupodistribuidor__c,
+                                                                        distribuidor__c,
+                                                                        correoelectronico__c,
+                                                                        movil__c,
+                                                                        plaza__c
+                                                                            from
+                                                                                data_staging.slf_empleado__c
+                                                                            where
+                                                                                info_day = {info_day_slf_empleado__c}
+                                                                            group by
+                                                                            id,
+                                                                        name,
+                                                                        tipopersonal__c,
+                                                                        estatus__c ,
+                                                                        folioempleado__c ,
+                                                                        noempleado__c,
+                                                                        posicion__c ,
+                                                                        canal__c ,
+                                                                        subcanal__c,
+                                                                        grupodistribuidor__c,
+                                                                        distribuidor__c,
+                                                                        correoelectronico__c,
+                                                                        movil__c,
+                                                                        plaza__c) as e 
+                                                                                          on
+                                                                            e.id = op.empleado__c
+                                                                        left join (
+                                                                            select
+                                                                                account_no
+                                                                            from
+                                                                                data_staging.brm_account_t
+                                                                            where
+                                                                                info_day = {info_day_brm_account_t}
+                                                                            group by
+                                                                                account_no
+                                                                                            ) as ac  
+                                                                                          on
+                                                                            ac.account_no = cf.idcuentabrm__c
+
+                                                                            );"""
+                                    
+                        conn = wr.redshift.connect("redshift_devsie")
+                                    
+                        with conn.cursor() as cursor:
+                             cursor.execute(sql_tabla_vendedores_primero)
+                             cursor.execute("commit;")
+                                    
+                        conn.close()
+                                    
+                        print(f"Termino de crearse la tabla: vendedores_primero_{mes}_{anio}")
+                        fin = time.time()
+                        tiempo=fin-inicio
+                        print(f"Tiempo de ejecución de la tabla vendedores_primero_{mes}_{anio}:  {tiempo} ") 
+                         
+
+                    else:
+                        print("la base data_staging.brm_account_t no cuenta con registros suficientes")
+                else:
+                    print("la base data_staging.slf_empleado__c no cuenta con registros suficientes")
+            else:
+                print("la base data_staging.ta_slf_cuentafactura__c no cuenta con registros suficientes")
+        else:
+            print("la base data_staging.ta_slf_cuentafactura__c no cuenta con registros suficientes")
+    else:
+        print("la base staging_layer.ta_slf_opportunity no cuenta con registros suficientes")
+else:
+    print("la base staging_layer.ta_slf_opportunity no cuenta con registros suficientes")
+    
