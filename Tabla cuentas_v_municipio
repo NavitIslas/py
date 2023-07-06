@@ -1,0 +1,113 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Tabla cuentas_v_municipio
+
+# ## Instalar librerias
+
+# In[ ]:
+
+
+pip install awswrangler
+
+
+# In[ ]:
+
+
+get_ipython().system('pip install odfpy')
+
+
+# ## Importar librerias
+
+# In[ ]:
+
+
+import numpy as np
+from datetime import datetime
+import awswrangler as wr
+import pandas as pd
+import calendar
+from datetime import datetime
+
+
+# ## Variables para la creación de las tablas
+
+# In[ ]:
+
+
+info_day_slf_cuentafactura__c = 20230221
+info_day_slf_empleado__c = 20230221
+info_day_brm_account_t = 20230221
+info_day_cartera = 20230221
+partition_ds_cobertura = 202301
+partition_ds_planes_homologados='202301'
+mes = "febrero"
+anio = 2023
+
+
+# ## Validadores
+
+# In[ ]:
+
+
+sql_ctas_cuentafactura__cuenta =f"""select count(DISTINCT idcuentabrm__c) from data_staging.ta_slf_cuentafactura__c where info_day={info_day_slf_cuentafactura__c}"""
+sql_cuenta_factura_cuentas  = wr.redshift.read_sql_query(sql_ctas_cuentafactura__cuenta, con)
+
+
+# ## Creación de la tabla cuentas_v_municipio
+
+# In[ ]:
+
+
+if sql_cuenta_factura_cuentas.iloc[0,0]>=9611459:    
+    inicio = time.time
+    print(f"Inicio de cración de la tabla: cuentas_v_municipio_{mes}_{anio}")
+    sql_tabla_cuentas_v_municipio = f"""
+                                                CREATE TABLE public.cuentas_v_municipio_{mes}_{anio} AS (
+                                                select a.id_empleado,municipio_estado.cuenta, municipio_estado.d_codigo, 
+                                                          municipio_estado.d_mnpio, 
+                                                          municipio_estado.d_estado   from ( 
+                                                        select id_empleado, cuenta  from public.vendedores_tp_{mes}_{anio}  ) as a 
+                                                        left join( 
+
+                                                        select idcuentabrm__c as cuenta , 
+                                                          d_codigo, 
+                                                          d_mnpio, 
+                                                          d_estado  
+                                                          from( 
+                                                        SELECT cf.idcuentabrm__c, 
+                                                          s.d_codigo, 
+                                                          s.d_mnpio, 
+                                                          s.d_estado 
+                                                        FROM nuevos_negocios.sepomex AS s  
+                                                             JOIN data_staging.slf_cuentafactura__c 
+                                                             AS cf 
+                                                             ON s.d_codigo=cf.codigopostalinstalacion__c 
+                                                             WHERE cf.info_day = {info_day_slf_cuentafactura__c}) 
+                                                             group by  
+                                                         cuenta , 
+                                                         d_codigo, 
+                                                         d_mnpio, 
+                                                         d_estado 
+                                                        ) as municipio_estado 
+                                                        on a.cuenta = municipio_estado.cuenta
+                                                );
+                                               
+                                          
+                                                """
+                                    
+    conn = wr.redshift.connect("redshift_devsie")
+                                    
+    with conn.cursor() as cursor:
+         cursor.execute(sql_tabla_cuentas_v_municipio)
+         cursor.execute("commit;")
+                                    
+    conn.close()
+                                    
+    print(f"Termino de crearse la tabla: cuentas_v_municipio_{mes}_{anio}")
+    fin = time.time()
+    tiempo=fin-inicio
+    print(f"Tiempo de ejecución de la tabla cuentas_v_municipio_{mes}_{anio}:  {tiempo} ")
+    
+else:
+    print("la base data_staging.ta_slf_cuentafactura__c no cuenta con registros suficientes")
