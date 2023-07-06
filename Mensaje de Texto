@@ -1,0 +1,327 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Mensaje de texto
+
+# ## Instalar librerias¶
+
+# In[6]:
+
+
+pip install awswrangler
+
+
+# In[2]:
+
+
+get_ipython().system('pip install odfpy')
+
+
+# ## Importar librerias
+
+# In[3]:
+
+
+import numpy as np
+from datetime import datetime
+from datetime import timedelta
+import pandas as pd
+import awswrangler as wr
+
+
+# In[15]:
+
+
+pd.set_option("display.max_columns",None)
+
+
+# ## Conexion a Redshift
+
+# In[7]:
+
+
+#conexiones a redshift
+conn = wr.redshift.connect("redshift_devsie") # redshif viejito
+conn_aurora = wr.postgresql.connect("cctp_sandbox_aurora_master_instance") # aurora
+con_redshift_2 = wr.redshift.connect("redshift_cctp_bi") #nuevo
+
+
+# ## Lectura de la base que se encuentra en redshift
+
+# In[8]:
+
+
+sql = """
+            select a.cuenta,
+               b.nombre,
+               a.vida_util,
+		       a.ano_act,
+		       a.metodo_pago,
+		       a.genero,
+		       a.edad,
+		       a.tipo_bundle,
+		       a.megas_plan,
+		       a.nse,
+		       a.renta,
+		       a.plan_facturacion,
+		       a.promo_desc_empleados,
+		       a.plp_plan,
+		       a.country,
+		       a.precio_lista_brm,
+		       a.precio_pp_brm,
+		       a.noticias,
+		       a.entretenimiento,
+		       a.comedia,
+		       a.telenovela,
+		       a.deportes,
+		       a.drama,
+		       a.economia_politica,
+		       a.musica,
+		       a.adultos,
+		       a.terror_suspenso,
+		       a.cifi,
+		       a.infantil,
+		       a.educativo,
+		       a.accion_aventura,
+		       a.GB_subida,
+		       a.GB_bajada,
+	           a.consumo_gbsubida,
+               a.consumo_gbbajada
+        from(select cuenta,
+		       ano_act,
+		       metodo_pago,
+		       genero,
+		       edad,
+		       tipo_bundle,
+		       megas_plan,
+		       nse,
+		       renta,
+		       plan_facturacion,
+		       promo_desc_empleados,
+		       plp_plan,
+		       country,
+		       precio_lista_brm,
+		       precio_pp_brm,
+		       noticias,
+		       entretenimiento,
+		       comedia,
+		       telenovela,
+		       deportes,
+		       drama,
+		       economia_politica,
+		       musica,
+		       adultos,
+		       terror_suspenso,
+		       cifi,
+		       infantil,
+		       educativo,
+		       accion_aventura,
+		       case when status= 10103 then extract(year from current_date)-ano_act
+		            else vida_util/12 
+		       end as vida_util,
+		       total_subida /1000 AS GB_subida,
+		       total_bajada /1000 AS GB_bajada,
+		       case when (max_tasa_subida*100.00)/total_subida >= 90 then 'ALTO'
+		            when (max_tasa_subida*100.00)/total_subida < 90 and (max_tasa_subida*100.00)/total_subida >= 50 then 'MEDIO' 
+		            when (max_tasa_subida*100.00)/total_subida < 50 then 'BAJO'
+		       end as consumo_gbsubida,
+		       case when (max_tasa_bajada*100.00)/total_bajada >= 90 then 'ALTO'
+		            when (max_tasa_bajada*100.00)/total_bajada < 90 and (max_tasa_bajada*100.00)/total_bajada >= 50 then 'MEDIO' 
+		            when (max_tasa_bajada*100.00)/total_bajada < 50 then 'BAJO'
+		       end as consumo_gbbajada
+		from dataset_tp.dataset_upsell_tp
+		where info_month = 202302
+		      and cuenta in ('1.5127525', '0100173372', '0100000503', '0100000505','0100000618','0100000667', '0100000809')) as a
+		join (select distinct cuenta, nombre 
+			  from black_box.cartera
+			  WHERE info_day between'20230201' and '20230228'
+				    and cuenta in ('1.5127525', '0100173372', '0100000503', '0100000505','0100000618','0100000667', '0100000809')
+		     ) as b
+        on a.cuenta = b.cuenta
+               """
+
+
+# ## Creamos el dataframe df
+
+# In[9]:
+
+
+df = wr.redshift.read_sql_query(sql,con_redshift_2)
+
+
+# In[10]:
+
+
+df.head(5)
+
+
+# ## Nos traemos solo las columnas que nos interesan 
+
+# In[11]:
+
+
+df=df[['nombre','vida_util','plp_plan','megas_plan','consumo_gbsubida','consumo_gbbajada']]
+df
+
+
+# ## Creamos la funcion que agrega la columna con el texto que queremos enviar
+
+# In[46]:
+
+
+def texto(df: pd.DataFrame):
+    #Le agregamos el campo texto a nuestro dataframe 
+    df['texto'] = None
+    for index, row in df.iterrows():
+            nombre=row['nombre']
+            anios=row['vida_util']
+            bajada=row['consumo_gbbajada']
+            subida=row['consumo_gbsubida']
+            plan=row['plp_plan']
+            megas=row['megas_plan']
+            if anios ==1:
+                pronombre="este"
+            else:
+                pronombre="estos"
+            if  plan == None:
+                df.loc[index,'texto']= f"""Hola {nombre}, muchas gracias por estar con nostros {pronombre}
+                                        {anios} años. """
+            else:
+                if megas >= 50 and megas <1000:
+                    paquete=megas*2
+                    df.loc[index,'texto']= f"""Hola {nombre}, muchas gracias por estar con nostros {pronombre}
+                                                {anios} años, sabemos que es muy importante que siempre tengas el 
+                                                mejor internet,
+                                                con tu paquete {plan}
+                                                hemos visto que tienes un baja velocidad para tu
+                                                conusmo  de gigas
+                                                de bajada, tambien hemos visto 
+                                                que subes muchos archivos  te 
+                                                recomendamos adquirir el paquete {paquete} megas """
+                else:
+                    df.loc[index,'texto']= f"""Hola {nombre}, muchas gracias por estar con nostros {pronombre}
+                                                {anios} años, sabemos que es muy importante que siempre tengas el 
+                                                mejor internet,
+                                                con tu paquete {plan}
+                                                hemos visto que tienes un {bajada} consumo de gigabytes
+                                                de bajada, y un {subida} consumo de gigabytes de subida,por lo que te 
+                                                recomendamos adquirir Totalplay empresarial """
+    return df
+
+
+# In[ ]:
+
+
+
+
+
+# In[47]:
+
+
+df1=texto(df)
+#df1.to_csv('/home/ec2-user/SageMaker/Navit/chat/introduccion_venta.csv')
+
+
+# In[48]:
+
+
+df1['texto'][1]
+
+
+# In[30]:
+
+
+def texto_2(df: pd.DataFrame):
+    #Le agregamos el campo texto a nuestro dataframe 
+    df['texto'] = None
+    for index, row in df.iterrows():
+            nombre=row['nombre']
+            anios=row['vida_util']
+            bajada=row['consumo_gbbajada']
+            subida=row['consumo_gbsubida']
+            plan=row['plp_plan']
+            megas=row['megas_plan']
+            mejor_plan = 'Ultra Sonico'
+            if anios ==1:
+                pronombre="este"
+            else:
+                pronombre="estos"
+            if  plan == None:
+                df.loc[index,'texto']= f"""Hola {nombre}, muchas gracias por estar con nostros {pronombre}
+                                        {anios} años. """
+            else:
+                if megas >= 50 and megas <1000:
+                    paquete=megas*2
+                    df.loc[index,'texto']= f"""Hola {nombre}, muchas gracias por estar con nostros {pronombre}
+                                                {anios} años, de acuerdo a tu gustos y consumo de programación te recomendamos el paquete
+                                                Ultra Sonico ya que cuenta con todo lo que necesitas """
+                else:
+                    df.loc[index,'texto']= f"""Hola {nombre}, muchas gracias por estar con nostros {pronombre}
+                                                {anios} años, de acuerdo a tu gustos y consumo de programación te recomendamos el paquete
+                                                Ultra Sonico ya que cuenta con todo lo que necesitas
+                                                 """
+    return df
+
+
+# In[43]:
+
+
+df2=texto_2(df)
+df2.to_csv('/home/ec2-user/SageMaker/Navit/chat/introduccion_venta2.csv')
+
+
+# In[32]:
+
+
+df2['texto'][1]
+
+
+# In[36]:
+
+
+def soporte_1(df: pd.DataFrame):
+    #Le agregamos el campo texto a nuestro dataframe 
+    df['texto'] = None
+    for index, row in df.iterrows():
+            nombre=row['nombre']
+            anios=row['vida_util']
+            bajada=row['consumo_gbbajada']
+            subida=row['consumo_gbsubida']
+            plan=row['plp_plan']
+            megas=row['megas_plan']
+            mejor_plan = 'Ultra Sonico'
+            
+            if anios ==1:
+                pronombre="este"
+            else:
+                pronombre="estos"
+            if  plan == None:
+                df.loc[index,'texto']= f"""Hola {nombre}, muchas gracias por estar con nostros {pronombre}
+                                        {anios} años. """
+            else:
+                if megas >= 50 and megas <1000:
+                    paquete=megas*2
+                    df.loc[index,'texto']= f"""Hola {nombre} eres nuestro cliente favorito, necesitas ayuda en algo? """
+                else:
+                    df.loc[index,'texto']= f"""Hola {nombre} eres nuestro cliente favorito, necesitas ayuda en algo?"""
+    return df
+
+
+# In[44]:
+
+
+s_df= soporte_1(df)
+s_df.to_csv('/home/ec2-user/SageMaker/Navit/chat/soporte_tp.csv')
+
+
+# In[38]:
+
+
+s_df['texto'][0]
+
+
+# In[ ]:
+
+
+
+
