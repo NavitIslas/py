@@ -1,0 +1,561 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Empleados
+
+# ## Instalar librerias
+
+# In[1]:
+
+
+pip install awswrangler
+
+
+# In[2]:
+
+
+get_ipython().system('pip install odfpy')
+
+
+# ## Importar librerias
+
+# In[3]:
+
+
+import numpy as np
+from datetime import datetime
+import awswrangler as wr
+import pandas as pd
+import calendar
+from datetime import datetime
+
+
+# ## Conexion a redshift
+
+# In[4]:
+
+
+con = wr.redshift.connect("redshift_devsie")
+conn_aurora = wr.postgresql.connect("cctp_sandbox_aurora_master_instance")
+con_redshift_2 = wr.redshift.connect("redshift_cctp_bi")
+
+
+# ## Variables para la creación de las tablas
+
+# In[5]:
+
+
+info_day_slf_cuentafactura__c = 20230221
+info_day_slf_empleado__c = 20230221
+info_day_brm_account_t = 20230221
+info_day_cartera = 20230221
+partition_ds_cobertura = 202301
+partition_ds_planes_homologados='202301'
+mes = "febrero"
+anio = 2023
+
+
+# ## Validación de tablas
+
+# In[6]:
+
+
+sql_ctas_opportunity = "select count(DISTINCT empleado__c) from staging_layer.ta_slf_opportunity "
+sql_empleados = wr.redshift.read_sql_query(sql_ctas_opportunity, con)
+sql_ctas_opportunity_op = "select count(*) from staging_layer.ta_slf_opportunity "
+sql_oportunidades = wr.redshift.read_sql_query(sql_ctas_opportunity_op, con)
+sql_ctas_cuentafactura__c =f"""select count(*) from data_staging.ta_slf_cuentafactura__c where info_day={info_day_slf_cuentafactura__c}"""
+sql_cf_folio_venta = wr.redshift.read_sql_query(sql_ctas_cuentafactura__c, con)
+sql_ctas_cuentafactura__cuenta =f"""select count(DISTINCT idcuentabrm__c) from data_staging.ta_slf_cuentafactura__c where info_day={info_day_slf_cuentafactura__c}"""
+sql_cuenta_factura_cuentas  = wr.redshift.read_sql_query(sql_ctas_cuentafactura__cuenta, con)
+sql_ctas_slf_empleado =f"""select count(DISTINCT id) from data_staging.slf_empleado__c """
+sql_slf_empleado  = wr.redshift.read_sql_query(sql_ctas_slf_empleado, con)
+sql_ctas_brm_account_t =f"""select count(DISTINCT account_no) from data_staging.brm_account_t where info_day={info_day_brm_account_t} """
+sql_brm_account_t  = wr.redshift.read_sql_query(sql_ctas_brm_account_t, con)
+sql_ctas_cartera =f"""select count(DISTINCT cuenta) from black_box.cartera where info_day={info_day_cartera}"""
+sql_cartera  = wr.redshift.read_sql_query(sql_ctas_cartera, con)
+sql_ctas_nse = "select count(DISTINCT cuenta) from data_lake.nse"
+sql_nse  = wr.redshift.read_sql_query(sql_ctas_nse, con)
+sql_ctas_ds_edad_genero = "select count(DISTINCT cuenta) from bi.ds_edad_genero"
+sql_ds_edad_genero  = wr.redshift.read_sql_query(sql_ctas_ds_edad_genero, con)
+
+if sql_empleados.iloc[0,0]>=71494:
+    if sql_oportunidades.iloc[0,0]>=13363488:
+        if sql_cf_folio_venta.iloc[0,0]>=9611512:
+            if sql_cuenta_factura_cuentas.iloc[0,0]>=9611459:
+                if sql_slf_empleado.iloc[0,0]>=133323:
+                    if sql_brm_account_t.iloc[0,0]>=6701662:
+                        if sql_cartera.iloc[0,0]>=6411922:
+                            if sql_nse.iloc[0,0]>=6491914:
+                                if sql_ds_edad_genero.iloc[0,0]>=5687268:
+                                    import time
+                                    inicio = time.time()
+                                    print(f"Inicio de cración de la tabla: vendedores_primero_{mes}_{anio}")
+                                    sql_tabla_vendedores_primero = f""" create table public.vendedores_primero_{mes}_{anio} as (
+                                                                        select
+                                                                            op.numerooportunidad__c as oportunidad,
+                                                                            cf.idcuentabrm__c as cuenta,
+                                                                            e.id as id_empleado,
+                                                                            e.name as empleado,
+                                                                            op.type tipo,
+                                                                        case
+                                                                                when ac.account_no is null then 'NO'
+                                                                                else 'SI'
+                                                                            end as ganada,
+                                                                            e.id,
+                                                                        e.name,
+                                                                        e.tipopersonal__c,
+                                                                        e.estatus__c ,
+                                                                        e.folioempleado__c ,
+                                                                        e.noempleado__c,
+                                                                        e.posicion__c ,
+                                                                        e.canal__c ,
+                                                                        e.subcanal__c,
+                                                                        e.grupodistribuidor__c,
+                                                                        e.distribuidor__c,
+                                                                        e.correoelectronico__c,
+                                                                        e.movil__c,
+                                                                        e.plaza__c
+                                                                        from
+                                                                            (
+                                                                            select
+                                                                                numerooportunidad__c,
+                                                                                empleado__c,
+                                                                                closedate,
+                                                                                stagename,
+                                                                                type
+                                                                            from
+                                                                                staging_layer.ta_slf_opportunity
+                                                                            where
+                                                                                empleado__c is not null
+                                                                                and empleado__c != ''
+                                                                                                 ) as op
+                                                                        join (
+                                                                            select
+                                                                                idcuentabrm__c,
+                                                                                folioventa__c
+                                                                            from
+                                                                                data_staging.ta_slf_cuentafactura__c
+                                                                            where
+                                                                                info_day in (select max(info_day) from data_staging.ta_slf_cuentafactura__c )
+                                                                                                ) as cf
+                                                                                          on
+                                                                            op.numerooportunidad__c = cf.folioventa__c                                                    
+                                                                        join (
+                                                                            select
+                                                                                id,
+                                                                        name,
+                                                                        tipopersonal__c,
+                                                                        estatus__c ,
+                                                                        folioempleado__c ,
+                                                                        noempleado__c,
+                                                                        posicion__c ,
+                                                                        canal__c ,
+                                                                        subcanal__c,
+                                                                        grupodistribuidor__c,
+                                                                        distribuidor__c,
+                                                                        correoelectronico__c,
+                                                                        movil__c,
+                                                                        plaza__c
+                                                                            from
+                                                                                data_staging.slf_empleado__c
+                                                                            where
+                                                                                info_day = {info_day_slf_empleado__c}
+                                                                            group by
+                                                                            id,
+                                                                        name,
+                                                                        tipopersonal__c,
+                                                                        estatus__c ,
+                                                                        folioempleado__c ,
+                                                                        noempleado__c,
+                                                                        posicion__c ,
+                                                                        canal__c ,
+                                                                        subcanal__c,
+                                                                        grupodistribuidor__c,
+                                                                        distribuidor__c,
+                                                                        correoelectronico__c,
+                                                                        movil__c,
+                                                                        plaza__c) as e 
+                                                                                          on
+                                                                            e.id = op.empleado__c
+                                                                        left join (
+                                                                            select
+                                                                                account_no
+                                                                            from
+                                                                                data_staging.brm_account_t
+                                                                            where
+                                                                                info_day = {info_day_brm_account_t}
+                                                                            group by
+                                                                                account_no
+                                                                                            ) as ac  
+                                                                                          on
+                                                                            ac.account_no = cf.idcuentabrm__c
+
+                                                                            );"""
+                                    
+                                    conn = wr.redshift.connect("redshift_devsie")
+                                    
+                                    with conn.cursor() as cursor:
+                                         cursor.execute(sql_tabla_vendedores_primero)
+                                         cursor.execute("commit;")
+                                    
+                                    conn.close()
+                                    
+                                    print(f"Termino de crearse la tabla: vendedores_primero_{mes}_{anio}")
+                                    fin = time.time()
+                                    tiempo=fin-inicio
+                                    print(f"Tiempo de ejecución de la tabla vendedores_primero_{mes}_{anio}:  {tiempo} ") 
+                                    inicio = time.time()
+                                    
+                                    
+                                    
+                                    
+                                    
+                                    
+                                   
+                                   
+                                   
+                                   
+                                    inicio = time.time
+                                    print(f"Inicio de cración de la tabla: vendedores_tp_{mes}_{anio}")
+                                    sql_tabla_vendedores_tp = f"""
+                                                create table  public.vendedores_tp_{mes}_{anio} as (
+                                                select
+                                                a.cuenta,
+                                                nse.nse,
+                                                edad_genero.birthday, 
+                                                edad_genero.genero, 
+                                                edad_genero.edad,
+                                                a.status,
+                                                a.created_t,
+                                                a.vida_util,
+                                                a.anio_created,
+                                                a.mes_created,
+                                                a.status_cuenta,
+                                                a.motivo_cancelacion,
+                                                a.cancel_time,
+                                                a.anio_cancel,
+                                                a.mes_cancel,
+                                                a.oportunidad,
+                                                a.idcuentabrm__c,
+                                                a.folioventa__c,
+                                                a.numerointeriorfacturacion__c,
+                                                a.planservicio__c,
+                                                a.portabilidad__c,
+                                                a.renta_mensual_pl__c,
+                                                a.responsablecuentacomercial__c,
+                                                a.tipocuentahija__c,
+                                                a.referenciaurbana__c,
+                                                a.casa,
+                                                a.dep,
+                                                a.condominio,
+                                                a.ultima_actualizacion_datos__c,
+                                                a.ciclofacturacion__c,
+                                                a.nombre_olt__c,
+                                                a.categoryservice__c,
+                                                a.nivelderiesgo__c,
+                                                a.tipo_contrato__c,
+                                                a.vip__c,
+                                                a.false_c,
+                                                a.pagadora,
+                                                a.true_c,
+                                                a.curp__c,
+                                                a.tipoinmueble__c,
+                                                a.casa_sola,
+                                                a.plaza_comercial,
+                                                a.local_comercial,
+                                                a.condominio_horizontal,
+                                                a.conjunto,
+                                                a.edificio,
+                                                a.estatusinmueble__c,
+                                                a.canalaceptacionclub__c,
+                                                a.id_empleado,
+                                                a.empleado,
+                                                a.tipo,
+                                                a.ganada,
+                                                a.id,
+                                                a."name",
+                                                a.tipopersonal__c,
+                                                a.estatus__c,
+                                                a.folioempleado__c,
+                                                a.noempleado__c,
+                                                a.posicion__c,
+                                                a.canal__c,
+                                                a.subcanal__c,
+                                                a.grupodistribuidor__c,
+                                                a.distribuidor__c,
+                                                a.correoelectronico__c,
+                                                a.movil__c,
+                                                a.plaza__c ,
+                                                b.zona,
+                                                b.desc_servicio,
+                                                b.cluster,
+                                                b.distrito,
+                                                b.ciudad,
+                                                b.plaza,
+                                                b.region,
+                                                b.tipo_bundle,
+                                                b.familia,
+                                                b.fam_num,
+                                                c. geolocalizacioninstalacion_la,
+                                                c.geolocalizacioninstalacion_long,
+                                                c.planservicio,
+                                                c.leadsource
+
+
+                                                from(
+                                                select
+                                                cuenta,
+                                                status,
+                                                created_t,
+                                                vida_util,
+                                                anio_created,
+                                                mes_created,
+                                                status_cuenta,
+                                                motivo_cancelacion,
+                                                cancel_time,
+                                                anio_cancel,
+                                                mes_cancel,
+                                                oportunidad,
+                                                idcuentabrm__c,
+                                                folioventa__c,
+                                                numerointeriorfacturacion__c,
+                                                planservicio__c,
+                                                portabilidad__c,
+                                                renta_mensual_pl__c,
+                                                responsablecuentacomercial__c,
+                                                tipocuentahija__c,
+                                                referenciaurbana__c,
+                                                casa,
+                                                dep,
+                                                condominio,
+                                                ultima_actualizacion_datos__c,
+                                                ciclofacturacion__c,
+                                                nombre_olt__c,
+                                                categoryservice__c,
+                                                nivelderiesgo__c,
+                                                tipo_contrato__c,
+                                                vip__c,
+                                                false_c,
+                                                pagadora,
+                                                true_c,
+                                                curp__c,
+                                                tipoinmueble__c,
+                                                casa_sola,
+                                                plaza_comercial,
+                                                local_comercial,
+                                                condominio_horizontal,
+                                                conjunto,
+                                                edificio,
+                                                estatusinmueble__c,
+                                                canalaceptacionclub__c,
+                                                id_empleado,
+                                                empleado,
+                                                tipo,
+                                                ganada,
+                                                id,
+                                                "name",
+                                                tipopersonal__c,
+                                                estatus__c,
+                                                folioempleado__c,
+                                                noempleado__c,
+                                                posicion__c,
+                                                canal__c,
+                                                subcanal__c,
+                                                grupodistribuidor__c,
+                                                distribuidor__c,
+                                                correoelectronico__c,
+                                                movil__c,
+                                                plaza__c
+                                                from
+                                                    public.cuentas_v_empleados_{mes}_{anio}) as a
+
+                                                left join(
+                                                select
+                                                    A.cuenta,
+                                                    A.zona,
+                                                    A.desc_servicio,
+                                                    B.cluster,
+                                                    B.distrito,
+                                                    B.ciudad,
+                                                    B.plaza,
+                                                    B.region,
+                                                    C.tipo_bundle,
+                                                    C.familia,
+                                                    case
+                                                        when familia = 'TOTALPLAY INTERNET MAS TELEVISION' then 3
+                                                        else 2
+                                                    end as fam_num
+                                                from
+                                                    (
+                                                    select
+                                                        cuenta,
+                                                        zona,
+                                                        desc_servicio
+                                                    from
+                                                        black_box.cartera
+                                                    where
+                                                        info_day = {info_day_cartera}) A
+                                                left join (
+                                                    select
+                                                        "CLUSTER BRM" as ZONA,
+                                                        "CLUSTER HOMOLOGADO" as cluster,
+                                                        distrito,
+                                                        plaza,
+                                                        ciudad,
+                                                        region
+                                                    from
+                                                        bi.ds_cobertura
+                                                    where
+                                                    partition_0 = {partition_ds_cobertura}) B 
+                                                                                   on
+                                                    A.ZONA = B.ZONA
+                                                left join (
+                                                    select
+                                                        PLAN,
+                                                        "TIPO DE BUNDLE" as tipo_bundle,
+                                                        familia
+                                                    from
+                                                        bi.ds_planes_homologados
+                                                    where
+                                                        partition_0 = {partition_ds_planes_homologados} )C 
+                                                                        on
+                                                    A.desc_servicio = C.plan
+                                                    group by
+                                                    A.cuenta,
+                                                    A.zona,
+                                                    A.desc_servicio,
+                                                    B.cluster,
+                                                    B.distrito,
+                                                    B.ciudad,
+                                                    B.plaza,
+                                                    B.region,
+                                                    C.tipo_bundle,
+                                                    C.familia,
+                                                    fam_num) as b
+                                                            on
+                                                a.cuenta = b.cuenta
+                                                left join (
+                                                select
+                                                    idcuentabrm__c as cuenta,
+                                                    geolocalizacioninstalacion__latitude__s as geolocalizacioninstalacion_la,
+                                                    geolocalizacioninstalacion__longitude__s as geolocalizacioninstalacion_long,
+                                                    planservicio__c as planservicio,
+                                                    leadsource__c as leadsource
+                                                    from
+                                                    data_staging.slf_cuentafactura__c
+                                                where
+                                                    info_day = {info_day_slf_cuentafactura__c}
+                                                group by
+                                                    cuenta,
+                                                    geolocalizacioninstalacion__latitude__s,
+                                                    geolocalizacioninstalacion__longitude__s,
+                                                    planservicio__c,
+                                                    leadsource__c
+                                                                       )as c
+                                                            on
+                                                a.cuenta = c.cuenta
+
+                                                left join( 
+                                                    select 
+                                                    cuenta, 
+                                                    nse 
+                                                    from data_lake.nse 
+                                                    where info_day in (select max(info_day) from data_lake.nse) 
+                                                    )  as nse 
+                                                on a.cuenta = nse.cuenta  
+
+                                                left join ( 
+                                                    select 
+                                                    cuenta,
+                                                    birthday, 
+                                                    genero, 
+                                                    edad 
+                                                    from bi.ds_edad_genero 
+                                                    ) as edad_genero 
+                                                    on a.cuenta = edad_genero.cuenta);
+        
+                                          
+                                                """
+                                    
+                                    conn = wr.redshift.connect("redshift_devsie")
+                                    
+                                    with conn.cursor() as cursor:
+                                         cursor.execute(sql_tabla_vendedores_tp)
+                                         cursor.execute("commit;")
+                                    
+                                    conn.close()
+                                    
+                                    print(f"Termino de crearse la tabla: vendedores_tp_{mes}_{anio}")
+                                    fin = time.time()
+                                    tiempo=fin-inicio
+                                    print(f"Tiempo de ejecución de la tabla vendedores_tp_{mes}_{anio}:  {tiempo} ")
+ 
+ 
+ 
+                                    inicio = time.time
+                                    print(f"Inicio de cración de la tabla: cuentas_v_municipio_{mes}_{anio}")
+                                    sql_tabla_cuentas_v_municipio = f"""
+                                                CREATE TABLE public.cuentas_v_municipio_{mes}_{anio} AS (
+                                                select a.id_empleado,municipio_estado.cuenta, municipio_estado.d_codigo, 
+                                                          municipio_estado.d_mnpio, 
+                                                          municipio_estado.d_estado   from ( 
+                                                        select id_empleado, cuenta  from public.vendedores_tp_{mes}_{anio}  ) as a 
+                                                        left join( 
+
+                                                        select idcuentabrm__c as cuenta , 
+                                                          d_codigo, 
+                                                          d_mnpio, 
+                                                          d_estado  
+                                                          from( 
+                                                        SELECT cf.idcuentabrm__c, 
+                                                          s.d_codigo, 
+                                                          s.d_mnpio, 
+                                                          s.d_estado 
+                                                        FROM nuevos_negocios.sepomex AS s  
+                                                             JOIN data_staging.slf_cuentafactura__c 
+                                                             AS cf 
+                                                             ON s.d_codigo=cf.codigopostalinstalacion__c 
+                                                             WHERE cf.info_day = {info_day_slf_cuentafactura__c}) 
+                                                             group by  
+                                                         cuenta , 
+                                                         d_codigo, 
+                                                         d_mnpio, 
+                                                         d_estado 
+                                                        ) as municipio_estado 
+                                                        on a.cuenta = municipio_estado.cuenta
+                                                )
+                                               
+                                          
+                                                """
+                                    
+                                    conn = wr.redshift.connect("redshift_devsie")
+                                    
+                                    with conn.cursor() as cursor:
+                                         cursor.execute(sql_tabla_cuentas_v_municipio)
+                                         cursor.execute("commit;")
+                                    
+                                    conn.close()
+                                    
+                                    print(f"Termino de crearse la tabla: cuentas_v_municipio_{mes}_{anio}")
+                                    fin = time.time()
+                                    tiempo=fin-inicio
+                                    print(f"Tiempo de ejecución de la tabla cuentas_v_municipio_{mes}_{anio}:  {tiempo} ")
+                                else:
+                                    print("la base bi.ds_edad_genero no cuenta con registros suficientes")
+                            else:
+                                print("la base data_lake.nse no cuenta con registros suficientes")
+                        else:
+                            print("la base black_box.cartera no cuenta con registros suficientes")
+                    else:
+                        print("la base data_staging.brm_account_t no cuenta con registros suficientes")
+                else:
+                    print("la base data_staging.slf_empleado__c no cuenta con registros suficientes")
+            else:
+                print("la base data_staging.ta_slf_cuentafactura__c no cuenta con registros suficientes")
+        else:
+            print("la base data_staging.ta_slf_cuentafactura__c no cuenta con registros suficientes")
+    else:
+        print("la base staging_layer.ta_slf_opportunity no cuenta con registros suficientes")
+else:
+    print("la base staging_layer.ta_slf_opportunity no cuenta con registros suficientes")
