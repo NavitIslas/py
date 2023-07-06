@@ -1,0 +1,270 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # tabla: cuentas_v_empleados
+
+# ## Instalar librerias
+
+# In[1]:
+
+
+pip install awswrangler
+
+
+# In[ ]:
+
+
+get_ipython().system('pip install odfpy')
+
+
+# ## Importar librerias
+
+# In[ ]:
+
+
+import numpy as np
+from datetime import datetime
+import awswrangler as wr
+import pandas as pd
+import calendar
+from datetime import datetime
+
+
+# ## Variables para la creación de las tablas
+
+# In[ ]:
+
+
+info_day_slf_cuentafactura__c = 20230221
+info_day_slf_empleado__c = 20230221
+info_day_brm_account_t = 20230221
+info_day_cartera = 20230221
+partition_ds_cobertura = 202301
+partition_ds_planes_homologados='202301'
+mes = "febrero"
+anio = 2023
+
+
+# ## Validadores 
+
+# In[ ]:
+
+
+sql_ctas_brm_account_t =f"""select count(DISTINCT account_no) from data_staging.brm_account_t where info_day={info_day_brm_account_t} """
+sql_brm_account_t  = wr.redshift.read_sql_query(sql_ctas_brm_account_t, con)
+
+
+# ## Creación de la tabla Cuentas_v_empleados
+
+# In[ ]:
+
+
+if sql_brm_account_t.iloc[0,0]>=6701662:
+    inicio = time.time
+    print(f"Inicio de cración de la tabla: cuentas_v_empleados_{mes}_{anio}")
+    sql_tabla_cuentas_v_empleados = f"""CREATE TABLE public.cuentas_v_empleados_{mes}_{anio} AS (
+                                                SELECT 
+                                                     c.status,
+                                                     c.created_t,
+                                                     c.vida_util,
+                                                     c.anio_created,
+                                                     c.mes_created,
+                                                     c.status_cuenta,
+                                                     c.motivo_cancelacion,
+                                                     c.cancel_time,
+                                                     c.anio_cancel,
+                                                     c.mes_cancel,
+                                                     d.oportunidad,
+                                                           d.folioventa__c,
+                                                       d.numerointeriorfacturacion__c,
+                                                       d.planservicio__c,
+                                                       d.portabilidad__c,
+                                                       d.renta_mensual_pl__c,
+                                                       d.responsablecuentacomercial__c,
+                                                       d.tipocuentahija__c,
+                                                       d.referenciaurbana__c,
+                                                       d.casa,
+                                                       d.dep,
+                                                       d.condominio,
+                                                       d.ultima_actualizacion_datos__c,
+                                                       d.ciclofacturacion__c,
+                                                       d.nombre_olt__c,
+                                                       d.categoryservice__c,
+                                                       d.nivelderiesgo__c,
+                                                       d.tipo_contrato__c,
+                                                       d.vip__c,
+                                                       d.false_c,
+                                                       d.pagadora,
+                                                       d.true_c,
+                                                       d.curp__c,
+                                                       d.tipoinmueble__c,
+                                                       d.casa_sola,
+                                                       d.plaza_comercial,
+                                                       d.local_comercial,
+                                                       d.condominio_horizontal,
+                                                       d.conjunto,
+                                                       d.edificio,
+                                                       d.estatusinmueble__c,
+                                                       d.canalaceptacionclub__c,
+                                                       d.id_empleado,
+                                                       d.empleado,
+                                                       d.tipo,
+                                                       d.ganada,
+                                                       d.id,
+                                                       d.name,
+                                                       d.tipopersonal__c,
+                                                       d.estatus__c,
+                                                       d.folioempleado__c,
+                                                       d.noempleado__c,
+                                                       d.posicion__c,
+                                                       d.canal__c,
+                                                       d.subcanal__c,
+                                                       d.grupodistribuidor__c,
+                                                       d.distribuidor__c,
+                                                       d.correoelectronico__c,
+                                                       d.movil__c,
+                                                       d.plaza__c                 
+                                                FROM(
+                                                                SELECT 
+                                                                account_no as cuenta,
+                                                                status,
+                                                                created_t,
+                                                                vida_util,
+                                                                anio_created,
+                                                                mes_created,
+                                                                status_cuenta,
+                                                                motivo_cancelacion ,
+                                                                CASE 
+                                                                    WHEN status=10100 OR status=10102 THEN ''
+                                                                    ELSE to_char(cancel_t, 'YYYY-MM-DD HH24:MI:SS')
+
+                                                                END AS cancel_time,
+                                                                case
+                                                                       when status='10100' or status='10102' then 0
+                                                                       else (CAST(SUBSTRING(cancel_t,1,4) as int))
+                                                                       end as anio_cancel,
+                                                                case
+                                                                       when status='10100' or status='10102' then 0
+                                                                       else (CAST(SUBSTRING(cancel_t,6,2) as int))       
+                                                                       end as mes_cancel 
+                                                                FROM(
+                                                                    SELECT a.account_no,
+                                                                           a.status,
+                                                                           a.created_t,vida_util,
+                                                                           (CAST(SUBSTRING(a.created_t,1,4) as int)) as anio_created,
+                                                                           (CAST(SUBSTRING(a.created_t,6,2) as int)) as mes_created,
+                                                                           a.status_cuenta,
+                                                                           (DATEADD(month, vida_util ,date(created_t))) AS cancel_t,
+                                                                           b.motivo_cancelacion 
+                                                                    FROM((
+                                                                        select 
+                                                                         account_no,
+                                                                         status,created_t,
+                                                                         case when status = '10103' then DATEDIFF(MM , date(created_t), date(from_unixtime(last_status_t)))
+                                                                               when status='10102'  then DATEDIFF(MM , date(created_t), CURRENT_DATE ) 
+                                                                               when status='10100' then DATEDIFF(MM , date(created_t), CURRENT_DATE ) 
+                                                                          end as vida_util,
+
+                                                                          case when status='10100'
+                                                                            then 'Activo'
+                                                                            When status='10102'
+                                                                            then 'Inactivo'
+                                                                            when status='10103'
+                                                                            then 'Cancelada'
+                                                                          end as status_cuenta
+                                                                          from data_staging.brm_account_t where info_day= {info_day_brm_account_t}) as a
+                                                                          full join (
+                                                                          SELECT account_no,
+                                                                                 estatuscuentaid,
+                                                                                 subestatuscuentaid,
+                                                                                 motivo_cancelacion
+                                                                          FROM motivo_cancelacion) as b
+                                                                          on a.account_no = b.account_no))
+                                                                GROUP BY
+                                                                account_no,
+                                                                status,
+                                                                created_t,
+                                                                vida_util,
+                                                                anio_created,
+                                                                anio_cancel,
+                                                                mes_cancel,
+                                                                mes_created,
+                                                                cancel_time,
+                                                                status_cuenta,
+                                                                motivo_cancelacion) AS c
+                                                 LEFT JOIN(SELECT oportunidad,
+                                                       cuenta,
+                                                       idcuentabrm__c,
+                                                       folioventa__c,
+                                                       numerointeriorfacturacion__c,
+                                                       planservicio__c,
+                                                       portabilidad__c,
+                                                       renta_mensual_pl__c,
+                                                       responsablecuentacomercial__c,
+                                                       tipocuentahija__c,
+                                                       referenciaurbana__c,
+                                                       casa,
+                                                       dep,
+                                                       condominio,
+                                                       ultima_actualizacion_datos__c,
+                                                       ciclofacturacion__c,
+                                                       nombre_olt__c,
+                                                       categoryservice__c,
+                                                       nivelderiesgo__c,
+                                                       tipo_contrato__c,
+                                                       vip__c,
+                                                       false_c,
+                                                       pagadora,
+                                                       true_c,
+                                                       curp__c,
+                                                       tipoinmueble__c,
+                                                       casa_sola,
+                                                       plaza_comercial,
+                                                       local_comercial,
+                                                       condominio_horizontal,
+                                                       conjunto,
+                                                       edificio,
+                                                       estatusinmueble__c,
+                                                       canalaceptacionclub__c,
+                                                       id_empleado,
+                                                       empleado,
+                                                       tipo,
+                                                       ganada,
+                                                       id,
+                                                       name,
+                                                       tipopersonal__c,
+                                                       estatus__c,
+                                                       folioempleado__c,
+                                                       noempleado__c,
+                                                       posicion__c,
+                                                       canal__c,
+                                                       subcanal__c,
+                                                       grupodistribuidor__c,
+                                                       distribuidor__c,
+                                                       correoelectronico__c,
+                                                       movil__c,
+                                                       plaza__c
+                                                       from devsie.public.vendedores_primero_{mes}_{anio} 
+                                                                      ) AS d
+                                                          ON c.cuenta=d.cuenta
+
+                                                            );
+                                                """
+                                    
+    conn = wr.redshift.connect("redshift_devsie")
+                                    
+    with conn.cursor() as cursor:
+         cursor.execute(sql_tabla_cuentas_v_empleados)
+         cursor.execute("commit;")
+                                    
+    conn.close()
+                                    
+    print(f"Termino de crearse la tabla: cuentas_v_empleados_{mes}_{anio}")
+    fin = time.time()
+    tiempo=fin-inicio
+    print(f"Tiempo de ejecución de la tabla cuentas_v_empleados_{mes}_{anio}:  {tiempo} ")
+                                    
+                        
+
+else:
+    print("la base data_staging.brm_account_t no cuenta con registros suficientes")
