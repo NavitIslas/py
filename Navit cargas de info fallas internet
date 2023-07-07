@@ -1,0 +1,76 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Navit cargas de info fallas internet
+
+# ## Importar librerias
+
+# In[1]:
+
+
+import numpy as np
+from datetime import datetime
+import awswrangler as wr
+import pandas as pd
+
+
+# ## Conexion a Redshift
+
+# In[2]:
+
+
+con = wr.redshift.connect("redshift_devsie")
+
+
+# ## prueba
+
+# In[ ]:
+
+
+mes=["abril"]
+num=[4]
+fechai=[20220401]
+fechat=[20220430]
+print(f"Inicio de cración de la tabla: fallas_{mes}_2022, con fecha de inicio: {fechai} y fecha de termino: {fechat}")
+sql_tabla = f"""CREATE TABLE public.fallas_abril_2022 AS (
+                      SELECT cuenta, SUM(sesiones_completas) AS num_sesiones_completas, SUM(sesiones_incompletas) AS num_sesiones_incompletas,
+                      SUM(interrupciones) AS num_interrupciones       
+                      FROM (SELECT cuenta,productid,
+                                   to_timestamp (begintime, 'YYYYMMDDHH24MISS',true) as begin_completa,
+                                   to_char(begin_completa,'HH24:MI:SS') as begin_hora,
+                                   to_timestamp (endtime, 'YYYYMMDDHH24MISS',true) as end_completa,
+                                   to_char(end_completa,'HH24:MI:SS') as end_hora,
+                                   DATEDIFF(sec,begin_completa::timestamp,end_completa::timestamp) as segundo_transcurrido,
+                                   CASE WHEN segundo_transcurrido >= 900 THEN 1
+                                        ELSE 0
+                                   END as sesiones_completas,
+                                   CASE WHEN   segundo_transcurrido>=1 AND segundo_transcurrido<= 899 THEN 1
+                                        ELSE 0
+                                   END as  sesiones_incompletas,
+                                   CASE WHEN segundo_transcurrido = 0 THEN 1 
+                                        ELSE 0
+                                   END  as interrupciones,
+                                   4 AS mes
+                             FROM data_lake.edr_aaa
+                             WHERE info_day BETWEEN 20220401 AND 20220430)
+                       GROUP BY cuenta);
+                       """
+
+
+
+conn = wr.redshift.connect("redshift_devsie")
+
+with conn.cursor() as cursor:
+    cursor.execute(sql_tabla)
+    cursor.execute("commit;")
+    #print(cursor.fetchall()) solo para imprimir el resultado
+conn.close()
+
+
+# In[ ]:
+
+
+df_tabla = wr.redshift.read_sql_query(sql_tabla,con)
+sql_commit = f"""COMMIT"""
+    
+df_tabla = wr.redshift.read_sql_query(sql_commit,con)
