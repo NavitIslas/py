@@ -1,0 +1,442 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Geobigdata Nuevo Leon
+
+# In[1]:
+
+
+import findspark
+findspark.init()
+import shapely
+import pandas as pd 
+import geopandas as gpd
+from pyspark.sql import SparkSession
+from pyspark import SparkContext
+from pyspark import SparkConf
+from sedona.register import SedonaRegistrator
+from sedona.utils import SedonaKryoRegistrator, KryoSerializer
+from pyspark.sql import SparkSession
+
+from pyspark.ml.feature import VectorAssembler
+from pyspark.ml.clustering import KMeans
+
+import folium
+
+
+# In[2]:
+
+
+import os
+os.environ["JAVA_HOME"] = "/usr/lib/jvm/jre-11-openjdk" #"/usr/lib/jvm/java-11-openjdk"
+#os.environ["SPARK_HOME"] = "/home/ec2-user/SageMaker/Experimentos/Memo/spark-3.2.2-bin-hadoop3.2"
+os.environ["SPARK_HOME"] = "/home/ec2-user/SageMaker/Experimentos/Memo/spark-3.3.2-bin-hadoop3"
+
+
+# In[3]:
+
+
+import pyspark
+print(pyspark.__version__)
+
+
+# In[4]:
+
+
+get_ipython().system('java -version')
+
+
+# In[5]:
+
+
+spark = SparkSession. \
+builder. \
+appName('GeoBigData'). \
+config("spark.serializer", KryoSerializer.getName). \
+config("spark.executor.memory", "5g"). \
+config("spark.driver.memory", "10g"). \
+config('spark.driver.maxResultSize', '5g'). \
+config("spark.kryo.registrator", SedonaKryoRegistrator.getName). \
+config('spark.jars.packages',
+           'org.apache.sedona:sedona-python-adapter-3.0_2.12:1.2.0-incubating,'
+           'org.datasyslab:geotools-wrapper:1.1.0-25.2').\
+getOrCreate()
+
+
+# In[6]:
+
+
+SedonaRegistrator.registerAll(spark)
+
+
+# In[7]:
+
+
+spark = SparkSession. \
+builder. \
+appName('GeoBigData'). \
+config("spark.serializer", KryoSerializer.getName). \
+config("spark.executor.memory", "5g"). \
+config("spark.driver.memory", "10g"). \
+config('spark.driver.maxResultSize', '5g'). \
+config("spark.kryo.registrator", SedonaKryoRegistrator.getName). \
+config('spark.jars.packages',
+           'org.apache.sedona:sedona-python-adapter-3.0_2.12:1.2.0-incubating,'
+           'org.datasyslab:geotools-wrapper:1.1.0-25.2').\
+getOrCreate()
+
+
+# In[8]:
+
+
+BD_MANZANAS = spark.read.parquet(f"/home/ec2-user/SageMaker/Navit/scince/19_NL.parquet/")
+
+
+# In[9]:
+
+
+BD_MANZANAS.show()
+
+
+# In[10]:
+
+
+BD_MANZANAS_EEVVV = BD_MANZANAS.select('CVEGEO', 'ECO1_R', 'EDU46_R', 'VIV82_R', 'VIV83_R', 'VIV84_R', 'geometry')
+BD_MANZANAS_EEVVV.cache()
+BD_MANZANAS_EEVVV.printSchema()
+BD_MANZANAS_EEVVV.show()
+
+
+# In[11]:
+
+
+BD_MANZANAS_EEVVV.createOrReplaceTempView("NL_manzanas")
+
+
+# In[12]:
+
+
+view = spark.sql("select * from NL_manzanas").show()
+
+
+# In[13]:
+
+
+BD_MZA_EEVVV_CORREGIDO = spark.sql("""select 
+                                  CVEGEO,
+                                  if( (isnull(ECO1_R) or ECO1_R < 0 ), 0, ECO1_R) as ECO1_R, 
+                                  if( (isnull(EDU46_R) or EDU46_R < 0 ), 0, EDU46_R) as EDU46_R,
+                                  if( (isnull(VIV82_R) or VIV82_R < 0 ), 0, VIV82_R) as VIV82_R,
+                                  if( (isnull(VIV83_R) or VIV83_R < 0 ), 0, VIV83_R) as VIV83_R,
+                                  if( (isnull(VIV84_R) or VIV84_R < 0 ), 0, VIV84_R) as VIV84_R,                                  
+                                  geometry
+                             from NL_manzanas """)
+
+BD_MZA_EEVVV_CORREGIDO.cache()
+BD_MZA_EEVVV_CORREGIDO.show()
+
+
+# In[14]:
+
+
+from pyspark.ml.feature import VectorAssembler
+from pyspark.ml.clustering import KMeans
+
+vecAssembler = VectorAssembler(inputCols=["ECO1_R", "EDU46_R", "VIV82_R", "VIV83_R", "VIV84_R"], outputCol="features")
+BD_MZA_EEVVV_CORREGIDO_VEC = vecAssembler.transform(BD_MZA_EEVVV_CORREGIDO)
+BD_MZA_EEVVV_CORREGIDO_VEC.cache()
+BD_MZA_EEVVV_CORREGIDO_VEC.show()
+
+
+# In[15]:
+
+
+kmeans = KMeans(k=5, seed=1, maxIter=250) 
+model = kmeans.fit(BD_MZA_EEVVV_CORREGIDO_VEC.select('features'))
+transformed = model.transform(BD_MZA_EEVVV_CORREGIDO_VEC)
+transformed.show()
+
+
+# In[16]:
+
+
+transformed.createOrReplaceTempView("result_kmeans")
+clusters = spark.sql(""" select prediction, 
+    mean(ECO1_R) as mean_econ_activa, 
+    mean(EDU46_R) as mean_educ_superior,
+    mean(VIV82_R) as mean_tv_paga,
+    mean(VIV83_R) as mean_streaming,
+    mean(VIV84_R) as mean_videojuegos,
+    count(*) as conteo
+from result_kmeans group by prediction order by mean_econ_activa""")
+
+clusters.show()
+
+
+# In[17]:
+
+
+df_clusters = clusters.toPandas()
+
+
+# In[18]:
+
+
+df_clusters
+
+
+# In[19]:
+
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+# In[20]:
+
+
+categories = df_clusters.columns.to_list()
+print(type(categories))
+print(categories)
+
+
+# In[23]:
+
+
+categories = df_clusters.columns[1:-1].values
+cluster_0 = df_clusters.where(df_clusters.prediction==0).dropna().values[0][1:-1]
+cluster_1 = df_clusters.where(df_clusters.prediction==1).dropna().values[0][1:-1]
+cluster_2 = df_clusters.where(df_clusters.prediction==2).dropna().values[0][1:-1]
+cluster_3 = df_clusters.where(df_clusters.prediction==3).dropna().values[0][1:-1]
+cluster_4 = df_clusters.where(df_clusters.prediction==4).dropna().values[0][1:-1]
+
+cluster_0 = [*cluster_0,cluster_0[0]]
+cluster_1 = [*cluster_1,cluster_1[0]]
+cluster_2 = [*cluster_2,cluster_2[0]]
+cluster_3 = [*cluster_3,cluster_3[0]]
+cluster_4 = [*cluster_4,cluster_4[0]]
+
+
+# In[24]:
+
+
+label_loc = np.linspace(start=0, stop=2 * np.pi, num=len(cluster_0))
+
+plt.figure(figsize=(10, 10))
+plt.subplot(polar=True)
+plt.plot(label_loc, cluster_0, label='Cluster 0')
+plt.plot(label_loc, cluster_1, label='Cluster 1')
+plt.plot(label_loc, cluster_2, label='Cluster 2')
+plt.plot(label_loc, cluster_3, label='Cluster 3')
+plt.plot(label_loc, cluster_4, label='Cluster 4')
+plt.title('Comparacion de clusters', size=20)
+#lines ,labels= plt.thetagrids(np.degrees(label_loc),categories)
+#
+# Add labels to plot
+for i, c in categories:
+    ax.text(str(i), ha='center', va='center')
+
+# = labels=
+plt.legend()
+plt.show()
+
+
+# In[25]:
+
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Generate some sample data
+array1 = np.random.rand(5)
+array2 = np.random.rand(5)
+array3 = np.random.rand(5)
+array4 = np.random.rand(5)
+
+# Define the x-axis labels
+labels = ['Label 1', 'Label 2', 'Label 3', 'Label 4', 'Label 5']
+
+# Define the positions of the bars on the x-axis
+x = np.arange(len(labels))
+
+# Define the width of the bars
+width = 0.2
+
+# Create a figure and axis object
+fig, ax = plt.subplots()
+
+# Plot the bars for each array
+ax.bar(x - width/2, array1, width, label='Array 1')
+ax.bar(x + width/2, array2, width, label='Array 2')
+ax.bar(x + 3*width/2, array3, width, label='Array 3')
+ax.bar(x + 5*width/2, array4, width, label='Array 4')
+
+# Add x-axis and y-axis labels
+ax.set_xlabel('Labels')
+ax.set_ylabel('Values')
+
+# Add a title to the plot
+ax.set_title('Clustered Comparison of Four Arrays')
+
+# Add a legend to the plot
+ax.legend()
+
+# Show the plot
+plt.show()
+
+
+# In[26]:
+
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Generate example data for two clusters
+theta1 = np.random.uniform(low=0, high=2*np.pi, size=50)
+r1 = np.random.uniform(low=0, high=1, size=50)
+theta2 = np.random.uniform(low=0, high=2*np.pi, size=50)
+r2 = np.random.uniform(low=1, high=2, size=50)
+
+# Create polar coordinates diagram
+fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
+ax.scatter(theta1, r1, c='blue', marker='o', label='Cluster 1')
+ax.scatter(theta2, r2, c='red', marker='s', label='Cluster 2')
+
+# Add labels to plot
+for i, (t, r) in enumerate(zip(theta1, r1)):
+    ax.text(t, r, f'C1-{i}', ha='center', va='center')
+for i, (t, r) in enumerate(zip(theta2, r2)):
+    ax.text(t, r, f'C2-{i}', ha='center', va='center')
+
+# Add legend to plot
+ax.legend()
+
+# Show plot
+plt.show()
+
+
+# In[27]:
+
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Generate example data for two clusters
+theta1 = np.random.uniform(low=0, high=2*np.pi, size=50)
+r1 = np.random.uniform(low=0, high=1, size=50)
+theta2 = np.random.uniform(low=0, high=2*np.pi, size=50)
+r2 = np.random.uniform(low=1, high=2, size=50)
+
+# Create polar coordinates diagram
+fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
+ax.scatter(theta1, r1, c='blue', marker='o', label='Cluster 1')
+ax.scatter(theta2, r2, c='red', marker='s', label='Cluster 2')
+
+# Add labels to plot
+for i, (t, r) in enumerate(zip(theta1, r1)):
+    ax.text(t, r, f'C1-{i}', ha='center', va='center')
+for i, (t, r) in enumerate(zip(theta2, r2)):
+    ax.text(t, r, f'C2-{i}', ha='center', va='center')
+
+# Add legend to plot
+ax.legend()
+
+# Show plot
+plt.show()
+
+
+# In[28]:
+
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Generate example data for two clusters
+theta1 = np.random.uniform(low=0, high=2*np.pi, size=50)
+r1 = np.random.uniform(low=0, high=1, size=50)
+theta2 = np.random.uniform(low=0, high=2*np.pi, size=50)
+r2 = np.random.uniform(low=1, high=2, size=50)
+
+# Define categories and angles
+categories = ['Category 1', 'Category 2', 'Category 3', 'Category 4']
+angles = np.linspace(0, 2*np.pi, len(categories), endpoint=False)
+
+# Create polar coordinates diagram
+fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
+ax.scatter(theta1, r1, c='blue', marker='o', label='Cluster 1')
+ax.scatter(theta2, r2, c='red', marker='s', label='Cluster 2')
+
+# Set theta ticks and labels
+ax.set_thetagrids(angles*180/np.pi, labels=categories)
+
+# Add labels to plot
+for i, c in enumerate(categories):
+    ax.text(angles[i], ax.get_rmax(), str(i+1), ha='center', va='center')
+
+# Add legend to plot
+ax.legend()
+
+# Show plot
+plt.show()
+
+
+# In[29]:
+
+
+df_manzanas = spark.sql("""select ECO1_R as eco_act,
+                                  EDU46_R as edu_sup,
+                                  VIV82_R as tv_paga,
+                                  VIV83_R as stream,
+                                  VIV84_R as videoj,
+                                  geometry,
+                                  prediction 
+                           from result_kmeans""").toPandas()
+geopandas_df_grid = gpd.GeoDataFrame(df_manzanas, geometry="geometry")
+geopandas_df_grid = geopandas_df_grid.set_crs('PROJCS["Mexico_ITRF2008_LCC",GEOGCS["Mexico_ITRF2008",DATUM["Mexico_ITRF2008",SPHEROID["GRS_1980",6378137,298.257222101],TOWGS84[0,0,0,0,0,0,0]],PRIMEM["Greenwich",0],UNIT["Degree",0.0174532925199433]],PROJECTION["Lambert_Conformal_Conic_2SP",AUTHORITY["EPSG","9802"]],PARAMETER["Central_Meridian",-102],PARAMETER["Latitude_Of_Origin",12],PARAMETER["False_Easting",2500000],PARAMETER["False_Northing",0],PARAMETER["Standard_Parallel_1",17.5],PARAMETER["Standard_Parallel_2",29.5],PARAMETER["Scale_Factor",1],UNIT["Meter",1,AUTHORITY["EPSG","9001"]],AUTHORITY["EPSG","6372"]]')
+geopandas_df_grid = geopandas_df_grid.to_crs("EPSG:4326")
+#geopandas_df_grid.to_file("/content/drive/MyDrive/GeoBigDataNube2022/resultados/manzanas_kmeans.shp")
+     
+
+
+# In[30]:
+
+
+get_ipython().system('pip install folium')
+
+import folium
+
+
+# In[31]:
+
+
+def rank_colormap(gdf):
+    if gdf['properties']['prediction'] == 4:
+        return 'green'
+    if gdf['properties']['prediction'] == 3 or 0:
+        
+        return 'yellow'
+    if gdf['properties']['prediction'] == 1 or 2:
+        return 'red'
+
+
+# In[32]:
+
+
+m = folium.Map(location=[21.8852562,-102.2915677], zoom_start=14)
+
+folium.GeoJson(data = geopandas_df_grid, name="Estratos",style_function = lambda feature: {
+   'fillColor': rank_colormap(feature),
+   'color': rank_colormap(feature),
+   'weight': '0.5',
+   'fill': True,
+   'fill_opacity': '1'
+}).add_to(m)
+
+
+# In[33]:
+
+
+m
+
+
+# In[ ]:
