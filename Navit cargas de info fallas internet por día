@@ -1,0 +1,107 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Navit cargas de info fallas internet por día
+
+# ## Importar librerias
+
+# In[1]:
+
+
+pip install awswrangler
+
+
+# In[2]:
+
+
+import numpy as np
+from datetime import datetime
+import awswrangler as wr
+import pandas as pd
+
+
+# ## Conexion a Redshift
+
+# In[3]:
+
+
+con = wr.redshift.connect("redshift_devsie")
+
+
+# ## variables
+
+# In[4]:
+
+
+meses_list=["enero"]
+fecha_inicio=[20230101]
+fecha_termino=[20230131]
+numeros=[202301]
+anio=2023
+
+
+# ## creacion de tablas publicas
+
+# In[ ]:
+
+
+for mes, fechai, fechat, num in zip(meses_list, fecha_inicio, fecha_termino, numeros):
+    import time
+    inicio = time.time()
+    print(f"Inicio de cración de la tabla: uso_internet_{mes}_{anio}, con fecha de inicio: {fechai} y fecha de termino: {fechat}")
+    sql_tabla = f"""CREATE TABLE public.uso_internet_{mes}_{anio} AS (
+                    SELECT cuenta,
+                           semana,
+                           dia,
+                           SUM(segundo_transcurrido) AS tiempo_transcurrido_i,
+                           SUM(bytes_subida) / 1000000 AS megas_sum_subida,
+                           SUM(bytes_bajada) / 1000000 AS megas_sum_bajada,
+                           SUM(sesiones_completas) AS sesiones_completas,
+                           SUM(sesiones_incompletas) AS sesiones_incompletas,
+                           SUM(interrupciones) AS interrupciones
+                    FROM (SELECT cuenta,productid,  bytes_subida, bytes_bajada,
+                                 to_timestamp (begintime, 'YYYYMMDDHH24MISS',TRUE) AS begin_completa,
+                                 to_timestamp (endtime, 'YYYYMMDDHH24MISS',TRUE) AS end_completa,
+                                 DATEDIFF(sec,begin_completa::TIMESTAMP,end_completa::TIMESTAMP)::FLOAT AS segundo_transcurrido,
+                                 EXTRACT(DAYOFWEEK FROM begin_completa) AS dia_de_la_semana,
+                                 EXTRACT(WEEK FROM begin_completa) AS semana,
+                                 CASE WHEN  dia_de_la_semana=0 THEN 'domingo' 
+                                      WHEN  dia_de_la_semana=1 THEN 'lunes' 
+                                      WHEN  dia_de_la_semana=2 THEN 'martes' 
+                                      WHEN  dia_de_la_semana=3 THEN 'miercoles' 
+                                      WHEN  dia_de_la_semana=4 THEN 'jueves' 
+                                      WHEN  dia_de_la_semana=5 THEN 'viernes' 
+                                      WHEN  dia_de_la_semana=6 THEN 'sabado'
+                                 END AS dia, 
+                                 CASE WHEN segundo_transcurrido >= 900 THEN 1
+                                      ELSE 0
+                                 END as sesiones_completas,
+                                 CASE WHEN   segundo_transcurrido>=1 AND segundo_transcurrido<= 899 THEN 1
+                                      ELSE 0
+                                 END as  sesiones_incompletas,
+                                 CASE WHEN segundo_transcurrido = 0 THEN 1 
+                                      ELSE 0
+                                 END  as interrupciones
+                          FROM data_lake.edr_aaa
+                          WHERE info_day BETWEEN {fechai} AND {fechat}
+                                AND SUBSTRING(begintime,1,6)::INTEGER = {num})
+                     GROUP BY cuenta, semana, dia);
+                       """
+
+
+
+    conn = wr.redshift.connect("redshift_devsie")
+
+    with conn.cursor() as cursor:
+        cursor.execute(sql_tabla)
+        cursor.execute("commit;")
+        #print(cursor.fetchall()) solo para imprimir el resultado
+    conn.close()
+    print(f"Termino de crearse la tabla: uso_internet_{mes}_{anio}, con fecha de inicio: {fechai} y fecha de termino: {fechat}")
+    fin = time.time()
+    tiempo=fin-inicio
+    print(f"Tiempo de ejecución de la tabla uso_internet_{mes}_{anio}:  {tiempo} ")  
+              
+
+
+# In[ ]:
