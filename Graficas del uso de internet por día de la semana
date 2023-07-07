@@ -1,0 +1,145 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Graficas del uso de internet por día de la semana
+
+# ## Importar librerias
+
+# In[1]:
+
+
+pip install awswrangler
+
+
+# In[2]:
+
+
+import numpy as np
+from datetime import datetime
+import awswrangler as wr
+import pandas as pd
+import matplotlib
+import matplotlib.pyplot as plt
+get_ipython().run_line_magic('matplotlib', 'inline')
+import seaborn as sns
+
+
+# ## Conexion a Redshift
+
+# In[3]:
+
+
+con = wr.redshift.connect("redshift_devsie")
+
+
+# ## Lectura de la base que se encuentra en el esquema publico de redshift
+
+# In[4]:
+
+
+query = pd.read_sql_query('''
+                            SELECT dia, SUM(megas_sum_subida) AS megas_sum_subida, 
+                                   SUM(megas_sum_bajada) AS megas_sum_bajada
+                            FROM (SELECT *
+                                  FROM public.uso_internet_enero_2022
+                                  UNION
+                                  SELECT *
+                                  FROM public.uso_internet_febrero_2022
+                                  UNION
+                                  SELECT *
+                                  FROM public.uso_internet_marzo_2022
+                                  UNION
+                                  SELECT *
+                                  FROM public.uso_internet_abril_2022
+                                  UNION
+                                  SELECT *
+                                  FROM public.uso_internet_junio_2022
+                                  UNION
+                                  SELECT *
+                                  FROM public.uso_internet_julio_2022
+                                  UNION
+                                  SELECT *
+                                  FROM public.uso_internet_agosto_2022
+                                  UNION
+                                  SELECT *
+                                  FROM public.uso_internet_septiembre_2022
+                                  UNION
+                                  SELECT *
+                                  FROM public.uso_internet_octubre_2022
+                                  UNION
+                                  SELECT *
+                                  FROM public.uso_internet_noviembre_2022
+                                  UNION
+                                  SELECT *
+                                  FROM public.uso_internet_diciembre_2022)
+                            GROUP BY dia
+                           ''',con)
+
+
+# ## Nos traemos las columnas que nos interesan de la base que acabamos de leer y creamos el dataframe df
+
+# In[5]:
+
+
+df = pd.DataFrame(query, columns = ['dia','megas_sum_subida','megas_sum_bajada'])
+
+
+# ## Mostramos el dataframe df
+
+# In[6]:
+
+
+df
+
+
+# ## Seleccionamos el campo día como index del dataframe
+
+# In[7]:
+
+
+df = df.set_index(['dia'])
+
+
+# In[8]:
+
+
+df
+
+
+# ## Graficamos la informacion del dataframe
+
+# In[9]:
+
+
+df.plot(kind = 'bar')
+plt.xlabel('día')
+plt.ylabel('Megas de subida y de bajada utilizados por día')
+
+
+# In[10]:
+
+
+plt.hist(df['megas_sum_subida'])
+plt.title('Histograma de los megas de subida utilizados durante el 2022')
+
+
+# In[11]:
+
+
+plt.hist(df['megas_sum_bajada'])
+plt.title('Histograma de los megas de bajada utilizados durante el 2022')
+
+
+# In[12]:
+
+
+sns.distplot(df['megas_sum_bajada']). set (title = 'Histograma de los megas de bajada utilizados durante el 2022 ')
+
+
+# In[13]:
+
+
+sns.distplot(df['megas_sum_subida']). set (title = 'Histograma de los megas de subida utilizados durante el 2022 ')
+
+
+# In[ ]:
