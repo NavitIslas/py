@@ -1,0 +1,152 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Tiempo de uso de internet de todo un día para todas las cuentas
+
+# ## Instalar librerias 
+
+# In[1]:
+
+
+pip install awswrangler
+
+
+# In[2]:
+
+
+get_ipython().system('pip install odfpy')
+
+
+# ## Importar librerias
+
+# In[3]:
+
+
+import numpy as np
+from datetime import datetime
+from datetime import timedelta
+import pandas as pd
+import awswrangler as wr
+
+
+# In[4]:
+
+
+pd.set_option("display.max_columns",None)
+
+
+# ## Conexion a Redshift
+# 
+
+# In[5]:
+
+
+con = wr.redshift.connect("redshift_devsie")
+
+
+# ## Lectura de la base que se encuentra en redshift
+
+# In[6]:
+
+
+sql = """
+                  SELECT cuenta,
+                         to_timestamp (begintime, 'YYYYMMDDHH24MISS',true) as begin_completa,
+                         to_timestamp (endtime, 'YYYYMMDDHH24MISS',true) as end_completa
+                                    FROM data_lake.edr_aaa
+                                    WHERE info_day=20230214
+                                          AND substring(begintime,1,8)::integer = 20230214
+               """
+
+
+# ## Creamos el dataframe df1 y y pasamos a datetime los campos begin_completa y end_completa
+
+# In[ ]:
+
+
+df1 = wr.redshift.read_sql_query(sql,con)
+
+
+# In[ ]:
+
+
+df1.head(5)
+
+
+# In[ ]:
+
+
+df1["begin_completa"] = pd.to_datetime(df1["begin_completa"], format='%Y-%m-%d %H:%M:%S')
+
+
+# In[ ]:
+
+
+df1["end_completa"] = pd.to_datetime(df1["end_completa"], format='%Y-%m-%d %H:%M:%S')
+
+
+# In[ ]:
+
+
+df1
+
+
+# ## Agrupamos el dataframe  por cuenta y lo ordenamos por los campos begin_completa y end_completa de forma ascendente
+
+# In[ ]:
+
+
+df = df1.groupby('cuenta').apply(lambda x: x.sort_values(['begin_completa','end_completa'], ascending=[True, True])).reset_index(drop=True)
+
+
+# In[ ]:
+
+
+df
+
+
+# ## Generamos la lista de todas las cuentas que estan en el dataframe
+
+# In[ ]:
+
+
+gb=df.groupby(['cuenta'])
+
+
+# In[ ]:
+
+
+y=[]
+for k, gp in gb:
+   y.append(k)
+print (y)
+
+
+# ## Calculamos el tiempo que cada cuenta pasa en internet
+
+# In[ ]:
+
+
+for data, row in zip(range(len(y)),y):
+    if data==0:
+        dp=df[df['cuenta']==row]
+        dp['time_difference']=0
+        for i in range(len(dp)):
+            if i == 0:
+                dp.iloc[i,3]=(dp.iloc[i,2]-dp.iloc[i,1])/ timedelta(seconds=1)
+            else:
+                dp.iloc[i,3]=((dp.iloc[i,2]-dp.iloc[i,1])-(dp.iloc[i-1,2]-dp.iloc[i,1]))/ timedelta(seconds=1)
+        final=dp.groupby(['cuenta'])[['time_difference']].sum()
+    else:
+        dp=df[df['cuenta']==row]
+        dp['time_difference']=0
+        for i in range(len(dp)):
+            if i == 0:
+                dp.iloc[i,3]=(dp.iloc[i,2]-dp.iloc[i,1])/ timedelta(seconds=1)
+            else:
+                dp.iloc[i,3]=((dp.iloc[i,2]-dp.iloc[i,1])-(dp.iloc[i-1,2]-dp.iloc[i,1]))/ timedelta(seconds=1)
+        # Apilar los __DataFrames__ uno encima del otro
+        dpf=dp.groupby(['cuenta'])[['time_difference']].sum()
+        del(dp)
+        final= pd.concat([final, dpf], axis=0)
+        print(final)
