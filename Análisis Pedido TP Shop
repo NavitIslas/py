@@ -1,0 +1,501 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Análisis Pedido TP Shop
+
+# ## Instalar librerias
+
+# In[1]:
+
+
+pip install awswrangler
+
+
+# In[2]:
+
+
+get_ipython().system('pip install odfpy')
+
+
+# ## Importar librerias
+
+# In[3]:
+
+
+import numpy as np
+from datetime import datetime
+from datetime import timedelta
+import pandas as pd
+import awswrangler as wr
+import matplotlib.pyplot as plt
+import plotly.express as px
+
+
+# In[4]:
+
+
+pd.set_option("display.max_columns",None)
+
+
+# ## Leer base de datos de excel
+
+# In[5]:
+
+
+df = pd.read_excel("Pedidos TP Shop por categoria (1).xlsx")
+df
+
+
+# ## Eliminar los registros que tienen producto = -
+
+# In[6]:
+
+
+df = df[df['Producto'] != '-']
+
+
+# ## Leagregamos las columnas dia, mes, anio, Total de parcialidades y Parcialidades pagadas al datafame
+
+# In[7]:
+
+
+df['dia'] = None
+df
+
+
+# In[8]:
+
+
+df['mes'] = None
+df
+
+
+# In[9]:
+
+
+df['anio'] = None
+df
+
+
+# In[10]:
+
+
+df['Total de parcialidades'] = None
+df
+
+
+# In[11]:
+
+
+df['Parcialidades pagadas'] = None
+df
+
+
+# ## Agregamos información a las columnas dia, mesm anio, Total de parcialidades y Parcialidades pagadas creadas previamente
+
+# In[12]:
+
+
+df['dia'] = df['FechaEntrega'].str.split('/').str.get(0)
+df
+
+
+# In[13]:
+
+
+df['mes'] = df['FechaEntrega'].str.split('/').str.get(1)
+df
+
+
+# In[14]:
+
+
+df['anio'] = df['FechaEntrega'].str.split('/').str.get(2)
+df
+
+
+# In[15]:
+
+
+df['Parcialidades pagadas'] = df['Parcialidades facturadas'].str.split('/').str.get(0)
+df
+
+
+# In[16]:
+
+
+df['Total de parcialidades'] = df['Parcialidades facturadas'].str.split('/').str.get(1)
+df
+
+
+# ## Obtención de graficas para el análisis del data frame 
+
+# ### Productos más vendidos
+
+# In[17]:
+
+
+df1=df[['Cuenta','Producto']]
+df1 = df1.groupby('Producto').count()
+df1 = df1.sort_values(by='Cuenta', ascending=False)
+df1=df1.head(10)
+df1 = df1.rename(columns={'Cuenta': 'ventas'})
+df1
+
+
+# In[18]:
+
+
+df1.plot(kind = 'bar')
+plt.xlabel('Producto')
+plt.ylabel("Total de Productos vendidos")
+plt.title("Top 10 Productos más vendidos", size=18)
+
+
+# ### Categorías vendidas
+
+# In[19]:
+
+
+df2=df[['Cuenta','Categoría']]
+df2 = df2.groupby('Categoría').count()
+df2 = df2.sort_values(by='Cuenta', ascending=False)
+df2=df2.head(10)
+df2 = df2.rename(columns={'Cuenta': 'ventas'})
+df2
+
+
+# In[20]:
+
+
+df2.plot(kind = 'bar')
+plt.xlabel('Categoría')
+plt.ylabel("Total de Productos vendidos por categoría")
+plt.title("Top 10 categorías con mas ventas", size=18)
+
+
+# ### Productos vendidos con su saldo
+
+# In[21]:
+
+
+df3=df[['Producto','Saldo por cobrar']]
+df3 = df3.groupby('Producto').agg({'Saldo por cobrar': ['sum', 'count']})
+df3.columns = ['sum', 'count']
+df3 = df3.sort_values(by='count', ascending=False)
+df4=df3.head(10)
+df4.reset_index(inplace=True)
+df4
+
+
+# In[22]:
+
+
+df4['sum'] = df4['sum'].round().astype(int)
+df4
+
+
+# In[23]:
+
+
+plt.scatter('Producto', 'sum',
+            s='count',
+            c='count',
+             data=df4)
+plt.xlabel("Producto")
+plt.ylabel("Saldo por cobrar")
+plt.title("Productos más vendidos y su saldo por cobrar ", size=18)
+plt.xticks(rotation='vertical')
+
+
+
+
+# ### Categorías vendidas con su saldo
+
+# In[24]:
+
+
+df5=df[['Categoría','Saldo por cobrar']]
+df5 = df5.groupby('Categoría').agg({'Saldo por cobrar': ['sum', 'count']})
+df5.columns = ['sum', 'count']
+df5 = df5.sort_values(by='count', ascending=False)
+df6=df5.head(10)
+df6.reset_index(inplace=True)
+df6
+
+
+# In[25]:
+
+
+plt.scatter('Categoría', 'sum',
+            s='count',
+            c='count',
+             data=df6)
+plt.xlabel("Categoría")
+plt.ylabel("Saldo por cobrar")
+plt.title("Categorías con más productos vendidos y su saldo por cobrar ", size=30)
+plt.xticks(rotation='vertical')
+
+
+# ## Cuantos productos se vendieron por año
+
+# In[26]:
+
+
+df7=df[['anio','Cuenta']]
+df7 = df7.groupby('anio').count()
+df7 = df7.sort_values(by='anio', ascending=True)
+df7=df7.head(10)
+df7 = df7.rename(columns={'Cuenta': 'ventas'})
+df7
+
+
+# In[27]:
+
+
+df7.plot(kind = 'bar')
+plt.xlabel('año')
+plt.ylabel("Total de Productos vendidos")
+plt.title("Total de productos vendidos por año", size=18)
+
+
+# In[28]:
+
+
+df8=df[['anio','mes','Cuenta']]
+df8 = df8.groupby(['anio', 'mes']).count()
+df8 = df8.sort_values(['anio','mes'], ascending=[True, True])
+df8 = df8.rename(columns={'Cuenta': 'ventas'})
+df8
+
+
+# In[29]:
+
+
+df8.plot(kind = 'bar')
+plt.xlabel('Año y mes')
+plt.ylabel("Total de Productos vendidos")
+plt.title("Total de productos vendidos por mes en cada año", size=18)
+
+
+# In[30]:
+
+
+df9=df[['anio','Categoría','Cuenta']]
+df9 = df9.groupby(['anio', 'Categoría']).count()
+df9 = df9.sort_values(['anio','Cuenta'], ascending=[True, False])
+df9 = df9.rename(columns={'Cuenta': 'ventas'})
+df9 = df9.groupby('anio', as_index=False).nth[:10]
+df9
+
+
+# In[31]:
+
+
+df9.plot(kind = 'bar')
+plt.xlabel('Año y categoría ')
+plt.ylabel("Total de Productos vendidos")
+plt.title("Top 10 de categorías con más productos vendidos en cada año", size=18)
+
+
+# ## Marcas más vendidas por categoría
+
+# In[32]:
+
+
+df10=df[['Producto','Saldo por cobrar']]
+df10 = df10.groupby('Producto').sum()
+df10 = df10.sort_values(by='Saldo por cobrar', ascending=False)
+df10=df10.head(10)
+df10
+
+
+# In[33]:
+
+
+df10.plot(kind = 'bar')
+plt.xlabel('Producto')
+plt.ylabel("Saldo por cobrar")
+plt.title("Top 10 productos con más saldo por cobrar", size=18)
+
+
+# In[34]:
+
+
+df11=df[['Categoría','Saldo por cobrar']]
+df11 = df11.groupby('Categoría').sum()
+df11 = df11.sort_values(by='Saldo por cobrar', ascending=False)
+df11=df11.head(10)
+df11
+
+
+# In[35]:
+
+
+df11.plot(kind = 'bar')
+plt.xlabel('Categoría')
+plt.ylabel("Saldo por cobrar")
+plt.title("Top 10 categorías con más saldo por cobrar", size=18)
+
+
+# In[36]:
+
+
+df12=df[['Total de parcialidades','Saldo por cobrar']]
+df12 = df12.groupby('Total de parcialidades').sum()
+df12 = df12.sort_values(by='Saldo por cobrar', ascending=False)
+df12=df12.head(10)
+df12
+
+
+# In[37]:
+
+
+df12.plot(kind = 'bar')
+plt.xlabel('Total de parcialidades')
+plt.ylabel("Saldo por cobrar")
+plt.title("Total de saldo por cobrar por el total de parcialidades ", size=18)
+
+
+# ## Productos con más atrasos en los pagos
+
+# In[59]:
+
+
+df13 = df[df['Atraso producto'] != '0']
+df13 = df13[df13['Atraso producto'] != '-']
+df13=df13[['Producto','Atraso producto']]
+df13 = df13.groupby('Producto').count()
+df13 = df13.sort_values(by='Atraso producto', ascending=False)
+df13=df13.head(10)
+df13
+
+
+# In[66]:
+
+
+df13.plot(kind = 'bar')
+plt.xlabel('Producto')
+plt.ylabel("Total de cuentas con atraso")
+plt.title("Top 10 productos con mas atraso en los pagos ", size=18)
+
+
+# ## Categorías con más atrasos en los pago
+
+# In[62]:
+
+
+df14 = df[df['Atraso producto'] != '0']
+df14 = df14[df14['Atraso producto'] != '-']
+df14=df14[['Categoría','Atraso producto']]
+df14 = df14.groupby('Categoría').count()
+df14 = df14.sort_values(by='Atraso producto', ascending=False)
+df14=df14.head(10)
+df14
+
+
+# In[67]:
+
+
+df14.plot(kind = 'bar')
+plt.xlabel('Categoría')
+plt.ylabel("Total de cuentas con atraso")
+plt.title("Top 10 categorías con mas atraso en los pagos", size=18)
+
+
+# ## Regresión lineal por producto
+
+# ### Importar librerias
+
+# In[38]:
+
+
+# Tratamiento de datos
+# ==============================================================================
+import pandas as pd
+import numpy as np
+
+# Gráficos
+# ==============================================================================
+import matplotlib.pyplot as plt
+from matplotlib import style
+import seaborn as sns
+
+# Preprocesado y modelado
+# ==============================================================================
+from scipy.stats import pearsonr
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import r2_score
+from sklearn.metrics import mean_squared_error
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+
+# Configuración matplotlib
+# ==============================================================================
+plt.rcParams['image.cmap'] = "bwr"
+#plt.rcParams['figure.dpi'] = "100"
+plt.rcParams['savefig.bbox'] = "tight"
+style.use('ggplot') or plt.style.use('ggplot')
+
+# Configuración warnings
+# ==============================================================================
+import warnings
+warnings.filterwarnings('ignore')
+
+
+# ###  Dataframe con los datos a utilizar
+
+# In[39]:
+
+
+df13=df[['Producto','Saldo por cobrar']]
+df13 = df13.groupby('Producto').sum()
+df13.reset_index(inplace=True)
+df13
+
+
+# ### Verificar si no tenemos  valores nulos en la base
+
+# In[40]:
+
+
+df13.isnull().sum()
+
+
+# ### Representación gráfica
+
+# In[41]:
+
+
+'''El primer paso antes de generar un modelo de regresión simple es representar los datos 
+para poder intuir si existe una relación y cuantificar dicha relación mediante un coeficiente de correlación.'''
+# Gráfico
+# ==============================================================================
+fig, ax = plt.subplots(figsize=(6, 3.84))
+
+df13.plot(
+    x    = 'Producto',
+    y    = 'Saldo por cobrar',
+    c    = 'firebrick',
+    kind = "scatter",
+    ax   = ax
+)
+ax.set_title('Distribución de bateos y runs');
+
+
+# ### Correlación lineal entre las dos variables
+
+# In[42]:
+
+
+# Correlación lineal entre las dos variables
+# ==============================================================================
+corr_test = pearsonr(x = df13['Producto'], y =  df13['Saldo por cobrar'])
+print("Coeficiente de correlación de Pearson: ", corr_test[0])
+print("P-value: ", corr_test[1])
+
+
+# ## Regresión lineal por categoría
+
+# In[ ]:
