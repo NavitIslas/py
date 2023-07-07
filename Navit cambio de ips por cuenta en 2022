@@ -1,0 +1,73 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Navit cambio de ips por cuenta en 2022
+
+# ## Importar librerias
+
+# In[1]:
+
+
+import numpy as np
+from datetime import datetime
+import awswrangler as wr
+import pandas as pd
+
+
+# In[2]:
+
+
+a = 'hello'
+print(a[::-1])
+
+
+# ## Conexion a Redshift
+
+# In[3]:
+
+
+con = wr.redshift.connect("redshift_devsie")
+
+
+# ## variables
+
+# In[4]:
+
+
+meses_list=["mayo"]
+num_list=[5]
+fecha_inicio=[20220501]
+fecha_termino=[20220531]
+
+
+# ## creacion de tablas publicas
+
+# In[5]:
+
+
+for mes, num, fechai, fechat in zip(meses_list, num_list, fecha_inicio, fecha_termino):
+    import time
+    inicio = time.time()
+    print(f"Inicio de cración de la tabla: cambioip_{mes}_2022, con fecha de inicio: {fechai} y fecha de termino: {fechat}")
+    sql_tabla = f"""CREATE TABLE public.cambioip_{mes}_2022 AS(   
+                    SELECT cuenta, COUNT(ip_cliente)
+                    FROM(SELECT cuenta, ip_cliente
+                    FROM data_lake.edr_aaa
+                    WHERE info_day BETWEEN {fechai} AND  {fechat}
+                    GROUP BY cuenta, ip_cliente) 
+                    GROUP BY cuenta);
+                    """
+
+
+
+    conn = wr.redshift.connect("redshift_devsie")
+
+    with conn.cursor() as cursor:
+        cursor.execute(sql_tabla)
+        cursor.execute("commit;")
+        #print(cursor.fetchall()) solo para imprimir el resultado
+    conn.close()
+    print(f"Termino de crearse la tabla: cambioip_{mes}_2022, con fecha de inicio: {fechai} y fecha de termino: {fechat}")
+    fin = time.time()
+    tiempo=fin-inicio
+    print(f"Tiempo de ejecución de la tabla cambioip_{mes}_2022:  {tiempo} ") 
