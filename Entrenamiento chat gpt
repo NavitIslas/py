@@ -1,0 +1,150 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Opiniones sobre Salinas
+
+# ## Instalar librerias
+
+# In[1]:
+
+
+get_ipython().system('pip install odfpy')
+
+
+# ## Importar librerias
+
+# In[2]:
+
+
+import numpy as np
+from datetime import datetime
+from datetime import timedelta
+import pandas as pd
+
+
+# In[3]:
+
+
+pd.set_option("display.max_columns",None)
+
+
+# ## Leer base de excel
+
+# In[4]:
+
+
+df = pd.read_excel("Salinas.xlsx")
+df
+
+
+# ## Asignar la segunda fila del dataframe como headers 
+
+# In[5]:
+
+
+df.columns = df.iloc[1]
+df
+
+
+# ## Eliminamos las filas 0 y 1 
+
+# In[6]:
+
+
+df.drop([ 0, 1 ],axis= 0 ,inplace= True )
+df
+
+
+# # Traemos solo las columnas que nos interesan del dataframe
+
+# In[7]:
+
+
+df=df[['Conversation Stream','Sentiment']]
+df
+
+
+# ## Nos traemos solo las conversaciones que tengan sentimiento Neutral y Negative
+
+# In[8]:
+
+
+df = df[df['Sentiment'].isin(['Neutral','Negative'])]
+df
+
+
+# ## Nos traemos solo la columna de Conversation Stream
+
+# In[9]:
+
+
+df=df[['Conversation Stream']]
+df
+
+
+# ## Renombramos la columna de Conversation Stream como Preguntas
+
+# In[10]:
+
+
+df.rename(columns = {'Conversation Stream':'Preguntas'}, inplace = True)
+df
+
+
+# ## Leagregamos la columna Respuestas al datafame 
+
+# In[11]:
+
+
+df['Respuestas'] = None
+df
+
+
+# ## Reiniciamos el indice del dataframe 
+
+# In[12]:
+
+
+df.reset_index(inplace=True, drop=True)
+df
+
+
+# ## Rellenamos la columna Respuestas con la informacion de Ricardo Salinas y con Totalplay es el mejor altercandose entre cada fila
+
+# In[13]:
+
+
+def respuestas(df: pd.DataFrame):
+    for index, row in df.iterrows():
+        if index%2 == 0:
+            df.loc[index,'Respuestas']="""Ricardo Benjamín Francisco Salinas Pliego, es un empresario mexicano, 
+                                          Contador Público por el Instituto Tecnológico y de Estudios Superiores
+                                          de Monterrey, finalizó su maestría en Negocios por la Universidad Tulane
+                                          y recibió un doctorado Honoris Causa por parte de la Universidad Autónoma
+                                          de Guadalajara. Es fundador y presidente de Grupo Salinas,formado por 
+                                          diversas empresas dedicadas a las telecomunicaciones, medios de comunicación
+                                          y entretenimiento, transporte, servicios financieros y comercio especializado,
+                                          entre otros sectores."""
+        else:
+            df.loc[index,'Respuestas']="Totalplay es el mejor"
+    return df
+        
+
+
+# In[14]:
+
+
+df1= respuestas(df)
+df1
+
+
+# In[15]:
+
+
+df1.to_csv('/home/ec2-user/SageMaker/Navit/chat/respuestas_salinas.csv')
+
+
+# In[ ]:
+
+
+df1['prompt'] = 'YOU: ' + df1[]
