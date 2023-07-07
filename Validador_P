@@ -1,0 +1,165 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[1]:
+
+
+import numpy as np
+from datetime import datetime
+import awswrangler as wr
+import pandas as pd
+import calendar
+from datetime import datetime
+
+
+# In[2]:
+
+
+conn = wr.redshift.connect("redshift_devsie")
+conn_aurora = wr.postgresql.connect("cctp_sandbox_aurora_master_instance")
+con_redshift_2 = wr.redshift.connect("redshift_cctp_bi")
+
+
+# In[3]:
+
+
+sql_ctas_addons = "select count(*), info_day from bi.ctas_promos where info_day  between 20220900 and 20221000  group by info_day order by info_day asc"
+sql_promos = wr.redshift.read_sql_query(sql_ctas_addons, conn)
+
+
+# In[ ]:
+
+
+sql_promo = "select count(*) from promos between 20221100 and 20221200 group by info_day order by info_day asc"
+#septimebte
+
+
+# In[6]:
+
+
+sql_promos['count'].min().round()
+
+
+# In[30]:
+
+
+validation_dict = {'cartera': 6_000_000_00, 'modelo_ont': 4_000_000, 'modelo_ont_max':4_500_000, 'ctas_addons_min':19_100_000,'ctas_addons_max':21_000_000 }
+def consistent_data(df: pd.DataFrame,val_min: str, val_max: str,validacion:str):
+    conn = wr.redshift.connect("redshift_devsie")
+    conn_aurora = wr.postgresql.connect("cctp_sandbox_aurora_master_instance")
+    con_redshift_2 = wr.redshift.connect("redshift_cctp_bi")
+    #Creamos un nuevo dataframe en el que vamos a almacenar, el total de registros con su info_day, 
+    #de cada total de registros que este dentro de los parametros minimo y maximo de la base
+    df1 = pd.DataFrame()
+    #Sele agregan los campos total_de_registros e info_day al nuevo dataframe que acabamos de crear
+    df1['total_de_registros'] = None
+    df1 = df1.assign(info_day=None)
+    for index, row in df.iterrows():
+        var1= row['count']
+        var2 = row['info_day']
+        validacion_min = validation_dict[val_min]
+        validacion_max = validation_dict[val_max]
+        if var1 > validacion_min and var1 < validacion_max :
+            a = var1
+            b= var2
+            df1.loc[index,'total_de_registros']=var1
+            df1.loc[index,'info_day']=var2
+            break
+        else:
+            print(f'Registros unsuficientes para el dia '+f' para {var2} con : '+ str(var1) + f' -> de {validacion}')
+            pass
+    return df1
+
+
+# In[ ]:
+
+
+
+
+
+# In[31]:
+
+
+des_addons = consistent_data(df_ctas_addons, 'ctas_addons_min','ctas_addons_max','ctas_addons')
+des_addons
+
+
+# ## Creacion de una base para validar
+
+# ### Se crea un dataframe con 10 filas y dos columnas, la columna 'count' y la columna 'info_day'
+
+# In[16]:
+
+
+df3 = pd.DataFrame(columns=['count', 'info_day'],
+                  index=range(10))
+
+
+# In[17]:
+
+
+df3
+
+
+# ### Se rellena la columna  'total_de_registros' con números aleatorios entre 19100000 y 30000000
+
+# In[21]:
+
+
+for new_ind,row in df3.iterrows():
+    df3.loc[new_ind,'count'] = np.random.randint(19100000, 30000000)
+
+
+# ### Se rellena la columna info_day con 10 info_day elegidos al azar
+
+# In[22]:
+
+
+df3['info_day']=[20221101,20221102,20221103,20221104,20221105,20221106,20221107,20221108,20221109,20221110]
+
+
+# In[23]:
+
+
+df3
+
+
+# In[24]:
+
+
+validation_dict = {'cartera': 6_000_000_00, 'modelo_ont': 4_000_000, 'modelo_ont_max':4_500_000, 'ctas_addons_min':19_100_000,'ctas_addons_max':21_000_000 }
+def consistent_data(df: pd.DataFrame,val_min: str, val_max: str,validacion:str):
+    conn = wr.redshift.connect("redshift_devsie")
+    conn_aurora = wr.postgresql.connect("cctp_sandbox_aurora_master_instance")
+    con_redshift_2 = wr.redshift.connect("redshift_cctp_bi")
+    #Creamos un nuevo dataframe en el que vamos a almacenar, el total de registros con su info_day, 
+    #de cada total de registros que este dentro de los parametros minimo y maximo de la base
+    df1 = pd.DataFrame()
+    #Sele agregan los campos total_de_registros e info_day al nuevo dataframe que acabamos de crear
+    df1['total_de_registros'] = None
+    df1 = df1.assign(info_day=None)
+    for index, row in df.iterrows():
+        var1= row['count']
+        var2 = row['info_day']
+        validacion_min = validation_dict[val_min]
+        validacion_max = validation_dict[val_max]
+        if var1 > validacion_min and var1 < validacion_max :
+            a = var1
+            b= var2
+            df1.loc[index,'total_de_registros']=var1
+            df1.loc[index,'info_day']=var2
+            break
+        else:
+            print(f'Registros unsuficientes para el dia '+f' para {var2} con : '+ str(var1) + f' -> de {validacion}')
+            pass
+    return df1
+
+
+# In[25]:
+
+
+des_addons = consistent_data(df3, 'ctas_addons_min','ctas_addons_max','ctas_addons')
+des_addons
+
+
+# In[ ]:
