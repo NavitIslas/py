@@ -1,0 +1,99 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Programas en canales
+
+# ## Instalar librerias
+
+# In[1]:
+
+
+pip install awswrangler
+
+
+# In[2]:
+
+
+get_ipython().system('pip install odfpy')
+
+
+# ## Importar librerias
+
+# In[3]:
+
+
+import numpy as np
+from datetime import datetime
+from datetime import timedelta
+import pandas as pd
+import awswrangler as wr
+
+
+# In[4]:
+
+
+pd.set_option("display.max_columns",None)
+
+
+# ## Lectura de la base de datos desde S3
+
+# In[5]:
+
+
+df = pd.read_csv("s3://data-lake-tp/programastv/202303/programas_tv_202303.csv000.gz", header=None, sep='|')
+
+
+# In[6]:
+
+
+df
+
+
+# ## Asignar la primer fila del dataframe como headers
+
+# In[7]:
+
+
+df.columns = df.iloc[0]
+df
+
+
+# ## Eliminamos las fila 0
+
+# In[8]:
+
+
+df.drop([ 0 ],axis= 0 ,inplace= True )
+df
+
+
+# ## Definimos la función para agregar el texto
+
+# In[9]:
+
+
+def texto(df: pd.DataFrame):
+    #Le agregamos el campo texto a nuestro dataframe 
+    df['texto'] = None
+    for index, row in df.iterrows():
+            canales=row['nombre_canal']
+            programas=row['programas']
+            df.loc[index,'texto']= f"""En Totalplay contamos con el canal {canales}, que transmite los siguientes programas {programas}"""
+
+    return df
+
+
+# In[10]:
+
+
+df1= texto(df)
+df1
+
+
+# In[11]:
+
+
+df1['texto'][1]
+
+
+# In[ ]:
