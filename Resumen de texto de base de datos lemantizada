@@ -1,0 +1,303 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Resumen de texto de base de datos lemantizada
+# 
+
+# ## Instalar librerias
+
+# In[1]:
+
+
+pip install inscriptis
+
+
+# In[2]:
+
+
+pip install googletrans
+
+
+# In[3]:
+
+
+get_ipython().system('pip install stanza')
+
+
+# In[4]:
+
+
+get_ipython().system('pip install spacy')
+
+
+# ## Importar librerias
+
+# In[5]:
+
+
+import bs4 as bs  
+import urllib.request  
+import re
+import nltk
+import bs4
+import urllib.request
+import requests
+from bs4 import BeautifulSoup
+import urllib.request
+from inscriptis import get_text
+from googletrans import Translator
+import pandas as pd
+import numpy as np
+from matplotlib import pyplot as plt
+from matplotlib import style
+get_ipython().run_line_magic('matplotlib', 'inline')
+import awswrangler as wr
+from nltk.corpus import stopwords
+from nltk.stem import WordNetLemmatizer, PorterStemmer
+from sklearn.feature_extraction.text import TfidfVectorizer
+import seaborn as sns
+import string
+from sklearn import svm
+from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import confusion_matrix
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+
+# In[6]:
+
+
+nltk.download('punkt')
+
+
+# In[7]:
+
+
+nltk.download('stopwords')
+
+
+# In[8]:
+
+
+nltk.download('omw-1.4')
+
+
+# In[9]:
+
+
+nltk.download('wordnet')
+
+
+# In[10]:
+
+
+stops = set(stopwords.words('spanish'))
+
+
+# In[11]:
+
+
+pd.set_option("display.max_columns",None)
+
+
+# ## leer base de datos 
+
+# ### Conexiones a redshift
+
+# In[12]:
+
+
+con_redshift_2 = wr.redshift.connect("redshift_cctp_bi")
+con_redshift_1 = wr.redshift.connect("redshift_devsie")
+
+
+# ### Mada a llamar un query de sql en el que se trae unicamente 10000 registros de la tabla llamadas_ds_202210 que se encuntra en el esquema publico a través de redshift
+
+# In[13]:
+
+
+query_dataset = """select * from public.llamadas_ds_202210 limit 10000"""
+
+dataset = wr.redshift.read_sql_query( sql=query_dataset, con=con_redshift_2)
+
+
+# In[14]:
+
+
+dataset
+
+
+# ### seleccionamos las columnas de interes
+
+# In[15]:
+
+
+df = dataset[['cuenta_union', 'description']]
+
+
+# In[16]:
+
+
+df
+
+
+# ## Limpieza y toquenización
+
+# ### se define una función para el proceso de limpieza de texto, que consiste en eliminar del texto todo aquello que no aporte información sobre su temática, estructura o contenido
+
+# ### Se aplica la función de limpieza y tokenización a cada registro de la columna description del dataframe
+
+# In[27]:
+
+
+from nltk import word_tokenize,sent_tokenize
+
+
+# In[30]:
+
+
+def limpieza(texto):
+    # Se convierte todo el texto a minúsculas
+    nuevo_texto = texto.lower()
+    # Eliminación de páginas web (palabras que empiezan por "http")
+    nuevo_texto = re.sub('http\S+', ' ', nuevo_texto)
+    # Eliminación de signos de puntuación
+    regex = '[\\!\\"\\#\\$\\%\\&\\\'\\(\\)\\*\\+\\,\\-\\.\\/\\:\\;\\<\\=\\>\\?\\@\\[\\\\\\]\\^_\\`\\{\\|\\}\\~]'
+    nuevo_texto = re.sub(regex , ' ', nuevo_texto)
+    # Eliminación de números
+    nuevo_texto = re.sub("\d+", ' ', nuevo_texto)
+    # Eliminación de espacios en blanco múltiples
+    nuevo_texto = re.sub("\\s+", ' ', nuevo_texto)
+    
+    return(nuevo_texto)
+
+
+# In[31]:
+
+
+df['p'] = df['description'].apply(lambda x: limpieza(x))
+df
+
+
+# In[32]:
+
+
+def toquenizar(texto):
+    #EN ESTA PARTE HACE LA TOKENIZACION 
+    sentence_list = nltk.sent_tokenize(texto) 
+    
+    return(sentence_list)
+
+
+# In[33]:
+
+
+df['p1'] = df['p'].apply(lambda x: toquenizar(x))
+df
+
+
+# In[41]:
+
+
+def frecuencias(texto):
+        #Encuentra la frecuencia de cada palabra
+    
+    stopwords = nltk.corpus.stopwords.words('spanish')
+ 
+    word_frequencies = {}  
+    for word in nltk.word_tokenize(texto):  
+        if word not in stopwords:
+            if word not in word_frequencies.keys():
+                word_frequencies[word] = 1
+            else:
+                word_frequencies[word] += 1
+
+    #
+    maximum_frequncy = max(word_frequencies.values())
+    return(maximum_frequncy)
+
+
+# In[42]:
+
+
+df['max'] = df['p'].apply(lambda x: toquenizar(x))
+df
+
+
+# In[39]:
+
+
+def resumen(texto):
+    #EN ESTA PARTE HACE LA TOKENIZACION 
+    sentence_list = nltk.sent_tokenize(texto) 
+    
+    #Encuentra la frecuencia de cada palabra
+    
+    stopwords = nltk.corpus.stopwords.words('spanish')
+ 
+    word_frequencies = {}  
+    for word in nltk.word_tokenize(texto):  
+        if word not in stopwords:
+            if word not in word_frequencies.keys():
+                word_frequencies[word] = 1
+            else:
+                word_frequencies[word] += 1
+
+    #
+    maximum_frequncy = max(word_frequencies.values())
+
+    for word in word_frequencies.keys():  
+        word_frequencies[word] = (word_frequencies[word]/maximum_frequncy)
+        
+    #Calcula las frases que mas se repiten
+     
+    sentence_scores = {}  
+    for sent in sentence_list:  
+        for word in nltk.word_tokenize(sent.lower()):
+            if word in word_frequencies.keys():
+                if len(sent.split(' ')) < 30:
+                    if sent not in sentence_scores.keys():
+                        sentence_scores[sent] = word_frequencies[word]
+                    else:
+                        sentence_scores[sent] += word_frequencies[word]
+                        
+    #REALIZA EL RESUMEN CON LAS MEJORES FRASES
+    
+    import heapq  
+    summary_sentences = heapq.nlargest(7, sentence_scores, key=sentence_scores.get)
+
+    summary = ' '.join(summary_sentences)  
+    
+    return(summary) 
+
+
+# In[40]:
+
+
+df['pr'] = df['p'].apply(lambda x: resumen(x))
+df
+
+
+# ## definir una funcion para lemantizar la base
+
+# In[21]:
+
+
+def lemantizar(texto):
+  lemma = WordNetLemmatizer()
+  texto = texto.split()
+  texto2 = " ".join([lemma.lemmatize(i, 'v') for i in texto])
+  nuevo_texto = " ".join([lemma.lemmatize(i, 'v') for i in texto])
+  return (nuevo_texto)
+
+
+# In[22]:
+
+
+df['p2'] = df['p1'].apply(lambda x: lemantizar(x))
+df
+
+
+# ## aplicar la función lemantizar base a toda la columna p que es la columna description ya limpia
+
+# In[ ]:
