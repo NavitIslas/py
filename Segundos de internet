@@ -1,0 +1,116 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[1]:
+
+
+get_ipython().system('pip install odfpy')
+
+
+# In[2]:
+
+
+import numpy as np
+from datetime import datetime
+from datetime import timedelta
+import pandas as pd
+
+
+# In[3]:
+
+
+pd.set_option("display.max_columns",None)
+
+
+# In[4]:
+
+
+#leer la base de excel
+df3 = pd.read_excel("segundosc.xlsx")
+df3
+
+
+# In[5]:
+
+
+df3.info()
+
+
+# In[6]:
+
+
+df3["begin_completa"] = pd.to_datetime(df3["begin_completa"], format='%Y-%m-%d %H:%M:%S')
+
+
+# In[7]:
+
+
+df3["end_completa"] = pd.to_datetime(df3["end_completa"], format='%Y-%m-%d %H:%M:%S')
+
+
+# In[8]:
+
+
+df=df3.groupby('cuenta').apply(lambda x:x)
+
+
+# In[10]:
+
+
+df=df[['cuenta','begin_completa','end_completa']]
+df
+
+
+# In[11]:
+
+
+df.info()
+
+
+# In[12]:
+
+
+gb=df.groupby(['cuenta'])
+
+
+# In[13]:
+
+
+y=[]
+for k, gp in gb:
+   y.append(k)
+   print (y)
+
+
+# In[15]:
+
+
+y
+
+
+# In[19]:
+
+
+for data, row in zip(range(len(y)),y):
+    if data==0:
+        dp=df[df['cuenta']==row]
+        dp['time_difference']=0
+        for i in range(len(dp)):
+            if i == 0:
+                dp.iloc[i,3]=(dp.iloc[i,2]-dp.iloc[i,1])/ timedelta(seconds=1)
+            else:
+                dp.iloc[i,3]=((dp.iloc[i,2]-dp.iloc[i,1])-(dp.iloc[i-1,2]-dp.iloc[i,1]))/ timedelta(seconds=1)
+        final=dp.groupby(['cuenta'])[['time_difference']].sum()
+    else:
+        dp=df[df['cuenta']==row]
+        dp['time_difference']=0
+        for i in range(len(dp)):
+            if i == 0:
+                dp.iloc[i,3]=(dp.iloc[i,2]-dp.iloc[i,1])/ timedelta(seconds=1)
+            else:
+                dp.iloc[i,3]=((dp.iloc[i,2]-dp.iloc[i,1])-(dp.iloc[i-1,2]-dp.iloc[i,1]))/ timedelta(seconds=1)
+        # Apilar los __DataFrames__ uno encima del otro
+        dpf=dp.groupby(['cuenta'])[['time_difference']].sum()
+        del(dp)
+        final= pd.concat([final, dpf], axis=0)
+        print(final)
