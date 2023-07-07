@@ -1,0 +1,92 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Correos enviados, abiertos y clicks por mes
+
+# ## Importar librerias
+
+# In[1]:
+
+
+pip install awswrangler
+
+
+# In[2]:
+
+
+import numpy as np
+from datetime import datetime
+import awswrangler as wr
+import pandas as pd
+
+
+# ## Conexion a Redshift
+
+# In[3]:
+
+
+con = wr.redshift.connect("redshift_devsie")
+
+
+# ## variables
+
+# In[4]:
+
+
+meses_list=["enero", "febrero", "marzo", "abril", "mayo", "junio","julio", "agosto", "septiembre","octubre", "noviembre", "diciembre"]
+fecha_inicio=[20220101,20220201,20220301,20220401,20220501,20220601,20220701,20220801,20220901,20221001,20221101,20221201]
+fecha_termino=[20220131,20220228,20220331,20220430,20220531,20220630,20220731,20220831,20220930,20221031,20221130,20221231]
+anio=2022
+
+
+# ## creacion de tablas publicas
+
+# In[5]:
+
+
+for mes, fechai, fechat in zip(meses_list, fecha_inicio, fecha_termino):
+    import time
+    inicio = time.time()
+    print(f"Inicio de cración de la tabla: clicks_{mes}_{anio}, con fecha de inicio: {fechai} y fecha de termino: {fechat}")
+    sql_tabla = f"""CREATE TABLE public.clicks_{mes}_{anio} AS (
+                    SELECT a.subscriberkey, a.correos_enviados, 
+                           COALESCE(c.links_abiertos,0) AS links_abiertos, 
+                           COALESCE(b.clicks_dados,0) AS clicks_dados,
+                           CASE WHEN clicks_dados!=0 THEN 'ALCANZADO'
+                                WHEN clicks_dados=0 THEN 'NO ALCANZADO'
+                           END AS target
+                    FROM(SELECT subscriberkey, COUNT (sendid) AS correos_enviados
+                         FROM (SELECT subscriberkey, sendid
+                               FROM client_contact.slf_email_send_sent
+                               WHERE info_day BETWEEN {fechai} AND {fechat}
+                               GROUP BY subscriberkey, sendid)
+                         GROUP BY subscriberkey) AS a
+                    LEFT JOIN (SELECT subscriberkey, COUNT (sendid) AS clicks_dados
+                               FROM (SELECT subscriberkey, sendid
+                                     FROM client_contact.slf_email_send_clicks
+                                     WHERE info_day BETWEEN {fechai} AND {fechat}
+                                     GROUP BY subscriberkey, sendid)
+                               GROUP BY subscriberkey) AS b
+                    ON a.subscriberkey=b.subscriberkey
+                    LEFT JOIN (SELECT subscriberkey, COUNT (sendid) links_abiertos
+                               FROM (SELECT subscriberkey, sendid
+                                     FROM client_contact.slf_email_send_opens
+                                     WHERE info_day BETWEEN {fechai} AND {fechat}
+                                     GROUP BY subscriberkey, sendid)
+                               GROUP BY subscriberkey) AS c
+                    ON b.subscriberkey=c.subscriberkey);
+                       """
+
+
+
+    conn = wr.redshift.connect("redshift_devsie")
+
+    with conn.cursor() as cursor:
+        cursor.execute(sql_tabla)
+        cursor.execute("commit;")
+        #print(cursor.fetchall()) solo para imprimir el resultado
+    conn.close()
+    print(f"Termino de crearse la tabla: clicks_{mes}_{anio}, con fecha de inicio: {fechai} y fecha de termino: {fechat}")
+    fin = time.time()
+    tiempo=fin-inicio
+    print(f"Tiempo de ejecución de la tabla clicks_{mes}_{anio}:  {tiempo} ") 
