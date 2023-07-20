@@ -1,0 +1,173 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Navit mejores y peores cuentas 2022
+
+# ## Importar librerias
+
+# In[1]:
+
+
+import pandas as pd
+import awswrangler as wr
+
+
+# ## Conexion a redshift
+
+# In[2]:
+
+
+con = wr.redshift.connect("redshift_devsie")
+
+
+# ## Variables
+
+# In[3]:
+
+
+variables=["sesiones_completas","sesiones_incompletas","num_interrupciones","segundos_transcurrido","megas_subida","megas_bajada","cambios_de_ip"]
+meses=["enero","febrero","marzo","abril","junio","julio","agosto","septiembre","noviembre","diciembre"]
+
+
+# ## Consultas sql
+
+# In[4]:
+
+
+for mes in meses:
+    for variable in variables:
+        if variable == "sesiones_completas":
+            print(f"Tabla: max_{variable}_{mes}")
+            sql_max = f"""WITH max_{variable} AS(
+                          SELECT ROW_NUMBER() OVER(ORDER BY {variable} DESC) AS rownum,
+                                 cuenta, sesiones_completas, sesiones_incompletas, num_interrupciones,
+                                 segundos_transcurrido, megas_subida, megas_bajada, 
+                                 cambios_de_ip
+                          FROM(SELECT a.cuenta, COALESCE(a.num_sesiones_completas, 0) AS sesiones_completas, 
+                                      COALESCE(a.num_sesiones_incompletas, 0) AS sesiones_incompletas, 
+                                      COALESCE(a.num_interrupciones, 0) AS num_interrupciones,
+                                      COALESCE(b.sum_segundo_transcurrido, 0) AS segundos_transcurrido, 
+                                      COALESCE(b.sum_megas_subida, 0) AS megas_subida, 
+                                      COALESCE(b.sum_megas_bajada,0) AS megas_bajada,
+                                      COALESCE(c.count, 0) AS cambios_de_ip
+                               FROM((SELECT *
+                                     FROM public.fallas_{mes}_2022) AS a
+                                     LEFT JOIN (SELECT *
+                                                FROM public.megas_{mes}_2022) AS b
+                                     ON a.cuenta=b.cuenta
+                                     LEFT JOIN (SELECT *
+                                                FROM public.cambioip_{mes}_2022) AS c
+                                     ON a.cuenta=c.cuenta)
+                           ))           
+                          SELECT cuenta, sesiones_completas, sesiones_incompletas, num_interrupciones,
+                                 segundos_transcurrido, megas_subida, megas_bajada, 
+                                 cambios_de_ip,
+                                 rownum
+                          FROM max_{variable}
+                          WHERE rownum<=10;
+                        """
+
+            df_max = wr.redshift.read_sql_query(sql_max,con)
+            df_max.to_csv(f'/home/ec2-user/SageMaker/Resutados_fallas_int_ips_megas_consumo/max_{variable}_{mes}.csv')
+
+            print(f"Tabla: min_{variable}_{mes}")
+            sql_min = f"""WITH min_{variable} AS(
+                          SELECT ROW_NUMBER() OVER(ORDER BY sesiones_completas) AS rownum,
+                                 cuenta, sesiones_completas, sesiones_incompletas, num_interrupciones,
+                                 segundos_transcurrido, megas_subida, megas_bajada, 
+                                 cambios_de_ip
+                          FROM(SELECT a.cuenta, COALESCE(a.num_sesiones_completas, 0) AS sesiones_completas, 
+                                      COALESCE(a.num_sesiones_incompletas, 0) AS sesiones_incompletas, 
+                                      COALESCE(a.num_interrupciones, 0) AS num_interrupciones,
+                                      COALESCE(b.sum_segundo_transcurrido, 0) AS segundos_transcurrido, 
+                                      COALESCE(b.sum_megas_subida, 0) AS megas_subida, 
+                                      COALESCE(b.sum_megas_bajada,0) AS megas_bajada,
+                                      COALESCE(c.count, 0) AS cambios_de_ip
+                               FROM((SELECT *
+                                     FROM public.fallas_{mes}_2022) AS a
+                                     LEFT JOIN (SELECT *
+                                                FROM public.megas_{mes}_2022) AS b
+                                     ON a.cuenta=b.cuenta
+                                     LEFT JOIN (SELECT *
+                                                FROM public.cambioip_{mes}_2022) AS c
+                                     ON a.cuenta=c.cuenta)
+                                 ))           
+                          SELECT cuenta, sesiones_completas, sesiones_incompletas, num_interrupciones,
+                                 segundos_transcurrido, megas_subida, megas_bajada, 
+                                 cambios_de_ip,
+                                 rownum
+                          FROM min_{variable}
+                          WHERE rownum<=4000;
+                        """
+
+            df_min = wr.redshift.read_sql_query(sql_min,con)
+            df_min.to_csv(f'/home/ec2-user/SageMaker/Resutados_fallas_int_ips_megas_consumo/min_{variable}_{mes}.csv')
+
+        else:
+            print(f"Tabla: max_{variable}_{mes}")
+            sql_max = f"""WITH max_{variable} AS(
+                          SELECT ROW_NUMBER() OVER(ORDER BY sesiones_completas DESC) AS rownum,
+                                 cuenta, sesiones_completas, sesiones_incompletas, num_interrupciones,
+                                 segundos_transcurrido, megas_subida, megas_bajada, 
+                                 cambios_de_ip
+                          FROM(SELECT a.cuenta, COALESCE(a.num_sesiones_completas, 0) AS sesiones_completas, 
+                                      COALESCE(a.num_sesiones_incompletas, 0) AS sesiones_incompletas, 
+                                      COALESCE(a.num_interrupciones, 0) AS num_interrupciones,
+                                      COALESCE(b.sum_segundo_transcurrido, 0) AS segundos_transcurrido, 
+                                      COALESCE(b.sum_megas_subida, 0) AS megas_subida, 
+                                      COALESCE(b.sum_megas_bajada,0) AS megas_bajada,
+                                      COALESCE(c.count, 0) AS cambios_de_ip
+                               FROM((SELECT *
+                                     FROM public.fallas_{mes}_2022) AS a
+                                     LEFT JOIN (SELECT *
+                                                FROM public.megas_{mes}_2022) AS b
+                                     ON a.cuenta=b.cuenta
+                                     LEFT JOIN (SELECT *
+                                                FROM public.cambioip_{mes}_2022) AS c
+                                     ON a.cuenta=c.cuenta)
+                           ))           
+                          SELECT cuenta, sesiones_completas, sesiones_incompletas, num_interrupciones,
+                                 segundos_transcurrido, megas_subida, megas_bajada, 
+                                 cambios_de_ip,
+                                 rownum
+                          FROM max_{variable}
+                          WHERE rownum<=10;
+                        """
+
+            df_max = wr.redshift.read_sql_query(sql_max,con)
+            df_max.to_csv(f'/home/ec2-user/SageMaker/Resutados_fallas_int_ips_megas_consumo/max_{variable}_{mes}.csv')
+
+            #train.to_csv('train.csv', index=False, header=False)
+
+            print(f"Tabla: min_{variable}_{mes}")
+            sql_min = f"""WITH min_{variable} AS(
+                          SELECT ROW_NUMBER() OVER(ORDER BY sesiones_completas) AS rownum,
+                                 cuenta, sesiones_completas, sesiones_incompletas, num_interrupciones,
+                                 segundos_transcurrido, megas_subida, megas_bajada, 
+                                 cambios_de_ip
+                          FROM(SELECT a.cuenta, COALESCE(a.num_sesiones_completas, 0) AS sesiones_completas, 
+                                      COALESCE(a.num_sesiones_incompletas, 0) AS sesiones_incompletas, 
+                                      COALESCE(a.num_interrupciones, 0) AS num_interrupciones,
+                                      COALESCE(b.sum_segundo_transcurrido, 0) AS segundos_transcurrido, 
+                                      COALESCE(b.sum_megas_subida, 0) AS megas_subida, 
+                                      COALESCE(b.sum_megas_bajada,0) AS megas_bajada,
+                                      COALESCE(c.count, 0) AS cambios_de_ip
+                               FROM((SELECT *
+                                     FROM public.fallas_{mes}_2022) AS a
+                                     LEFT JOIN (SELECT *
+                                                FROM public.megas_{mes}_2022) AS b
+                                     ON a.cuenta=b.cuenta
+                                     LEFT JOIN (SELECT *
+                                                FROM public.cambioip_{mes}_2022) AS c
+                                     ON a.cuenta=c.cuenta)
+                                 ))           
+                          SELECT cuenta, sesiones_completas, sesiones_incompletas, num_interrupciones,
+                                 segundos_transcurrido, megas_subida, megas_bajada, 
+                                 cambios_de_ip,
+                                 rownum
+                          FROM min_{variable}
+                          WHERE rownum<=4000;
+                        """
+
+            df_min = wr.redshift.read_sql_query(sql_min,con)
+            df_max.to_csv(f'/home/ec2-user/SageMaker/Resutados_fallas_int_ips_megas_consumo/min_{variable}_{mes}.csv')
