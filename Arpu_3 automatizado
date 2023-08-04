@@ -1,0 +1,246 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Arpu automatizado
+
+# ## Instalar librerias
+
+# In[1]:
+
+
+pip install awswrangler
+
+
+# In[2]:
+
+
+get_ipython().system('pip install odfpy')
+
+
+# In[3]:
+
+
+pip install boto3 botocore
+
+
+# ## Importar librerias
+
+# In[4]:
+
+
+import numpy as np
+from datetime import datetime
+import awswrangler as wr
+import pandas as pd
+import calendar
+import datetime
+from datetime import datetime
+from datetime import date
+import pytz
+from datetime import timedelta
+from dateutil.relativedelta import relativedelta
+import boto3
+from botocore.exceptions import ClientError
+
+
+# ## Conexion a redshift
+
+# In[5]:
+
+
+con_redshift_2 = wr.redshift.connect("redshift_cctp_inovation")
+conn = wr.redshift.connect("redshift_devsie")
+
+
+# In[6]:
+
+
+pd.set_option("display.max_columns",None)
+
+
+# ## Variables para la creación de las tablas
+
+# ### Días a restar
+
+# In[7]:
+
+
+dias=3
+
+
+# ### Obtener fecha a día vencido para filtrar la fecha de la tabla
+
+# In[8]:
+
+
+# Set the time zone to Mexico City
+mexico_timezone = pytz.timezone('America/Mexico_City')
+
+# Get the current datetime in Mexico City
+current_datetime = datetime.now(mexico_timezone)
+
+# Extract the date
+current_date = current_datetime.date()
+current_date=current_datetime.date() - relativedelta(days=dias)
+one_year_ago=current_date - relativedelta(months=12)
+
+current_date = datetime.combine(current_date, datetime.min.time())
+one_year_ago = datetime.combine(one_year_ago, datetime.min.time())
+
+
+# Convert the datetime object back to a formatted string
+current_date = current_date.strftime("'%Y-%m-%d %H:%M:%S'")
+one_year_ago = one_year_ago.strftime("'%Y-%m-%d %H:%M:%S'")
+
+# Print the result in a formatted way
+print("Día vencido:",current_date )
+print("Un año atras del día vencido", one_year_ago)
+
+
+# ### Obtener fecha para el nombre de la carpeta
+
+# In[9]:
+
+
+# Set the time zone to Mexico City
+mexico_timezone = pytz.timezone('America/Mexico_City')
+
+# Get the current datetime in Mexico City
+carpeta = datetime.now(mexico_timezone)
+
+# Extract the date
+carpeta = carpeta.date()- relativedelta(days=dias)
+
+carpeta = datetime.combine(carpeta, datetime.min.time())
+# Format the current day's date as "20230717"
+carpeta = carpeta.strftime("%Y%m%d")
+
+# Print the previous day's date in the desired format
+print("Se creara la siguiente carpeta en S3",carpeta)
+
+
+# ## Validar si en las base credito.payments hay información del día de hoy
+
+# In[10]:
+
+
+sql1 = f"""  SELECT cuenta,fecha
+            FROM credito.payments 
+            WHERE fecha={current_date}
+            limit 100;
+               """
+
+
+# In[11]:
+
+
+df1 = wr.redshift.read_sql_query(sql1,conn)
+
+
+# ## Validar si en las base credito.payments hay información de hace un año
+
+# In[12]:
+
+
+sql2 = f"""  SELECT cuenta,fecha
+            FROM credito.payments 
+            WHERE fecha={one_year_ago}
+            limit 100;
+               """
+
+
+# In[13]:
+
+
+df2 = wr.redshift.read_sql_query(sql2,conn)
+
+
+# ## Validar si existe la carpeta en S3
+
+# In[14]:
+
+
+s3_client = boto3.client('s3')
+
+
+# In[15]:
+
+
+def check_s3_folder(bucket_name, folder_name):
+    try:
+        response = s3_client.head_object(Bucket=bucket_name, Key=folder_name + '/')
+    except ClientError as e:
+        if e.response['Error']['Code'] == '404':
+            return False
+        else:
+            raise
+    return True
+
+
+# In[16]:
+
+
+bucket_name = 'desarrollos-bigdata-inovacion-us-east-1'
+folder_name = f'SAS/sas94/dev_arpu_3/{carpeta}'
+
+
+# ## Creación de la tabla dev_arpu en S3
+
+# In[17]:
+
+
+if not df1.empty:
+    if not df2.empty:
+        if not check_s3_folder(bucket_name, folder_name):
+            sql = f"""UNLOAD ($$ 
+                                select cuenta,avg,
+                                        case when avg between -20 and 20 then '0'
+                                             when avg < -20 then '<0'
+                                             when avg > 20 then '>0' 
+                                             when avg is null then '0' end as arpu
+                                from (select cuenta,avg(diferencias)
+                                      from (SELECT a.cuenta,
+                                                   a.monto-lag(a.monto) OVER (PARTITION BY a.cuenta ORDER BY a.fecha ASC) AS diferencias
+                                            FROM credito.payments a 
+                                    RIGHT JOIN (
+                                              SELECT
+                                                     cuenta,
+                                                     idclienteunico,
+                                                     fechaactivacion,
+                                                     regiondsc,
+                                                     clusterdsc,
+                                                     nse,
+                                                     estatuscuenta,
+                                                     negocio,
+                                                     edad_e,
+                                                     behaviorscore_brm,
+                                                     creditscore_sas as score,
+                                                     estado,
+                                                     medio_pago_favorito,
+                                                     pago_domiciliado
+                                              FROM data_lake.vista_unica_cuenta
+                                              WHERE info_day IN (SELECT MAX(info_day) 
+                                                                 FROM data_lake.vista_unica_cuenta)
+                                                   AND negocio IN ('RESIDENCIAL_FISICA_ACT_EMP','RESIDENCIAL_FISICA')
+                                              ) b ON a.cuenta=b.cuenta
+                                WHERE a.fecha >= {one_year_ago} AND  a.fecha < {current_date}
+                                ORDER BY  a.cuenta
+                                 )
+                                group by cuenta
+                                 )
+                $$)
+                TO 's3://desarrollos-bigdata-inovacion-us-east-1/SAS/sas94/dev_arpu_3/{carpeta}/'
+                IAM_ROLE 'arn:aws:iam::903746939682:role/ReadTP'
+                PARALLEL OFF
+                FORMAT PARQUET
+               """
+            df = wr.redshift.read_sql_query(sql,conn)
+        else:
+            print("Ya existe la carpeta en S3.")
+    else:
+        print("No hay información en la base credito.payments para el día",one_year_ago)
+else:
+    print("No hay información en la base credito.payments para el día",current_date)
+
+
+# In[ ]:
