@@ -1,0 +1,150 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Arpu manual
+
+# ## Instalar librerias
+
+# In[1]:
+
+
+pip install awswrangler
+
+
+# In[2]:
+
+
+get_ipython().system('pip install odfpy')
+
+
+# ## Importar librerias
+
+# In[3]:
+
+
+import numpy as np
+from datetime import datetime
+import awswrangler as wr
+import pandas as pd
+import calendar
+import datetime
+from datetime import datetime
+from datetime import date
+import pytz
+from datetime import timedelta
+from dateutil.relativedelta import relativedelta
+
+
+# ## Conexion a redshift
+
+# In[4]:
+
+
+con_redshift_2 = wr.redshift.connect("redshift_cctp_inovation")
+conn = wr.redshift.connect("redshift_devsie")
+
+
+# In[5]:
+
+
+pd.set_option("display.max_columns",None)
+
+
+# ## Variables para la creación de las tablas
+
+# ### Obtener fecha a día vencido para filtrar la fecha de la tabla
+
+# In[7]:
+
+
+anio=2023
+mes=3
+dia=15
+# Input the date you want 
+selected_date =datetime(anio, mes, dia)
+
+# Extract the date
+one_year_ago=selected_date - relativedelta(months=12)
+
+
+selected_date = datetime.combine(selected_date, datetime.min.time())
+one_year_ago = datetime.combine(one_year_ago, datetime.min.time())
+
+
+# Convert the datetime object back to a formatted string
+selected_date = selected_date.strftime("'%Y-%m-%d %H:%M:%S'")
+one_year_ago = one_year_ago.strftime("'%Y-%m-%d %H:%M:%S'")
+
+# Print the result in a formatted way
+print("Día seleccionado:",selected_date )
+print("Un año atras del día de hoy", one_year_ago)
+
+
+# ### Obtener fecha a día vencido para el nombre de la carpeta
+
+# In[9]:
+
+
+# Input the date you want 
+carpeta =datetime(anio, mes, dia)
+
+# Format the current day's date as "20230717"
+carpeta = carpeta.strftime("%Y%m%d")
+
+# Print the previous day's date in the desired format
+print("Se creara la siguiente carpeta en S3",carpeta)
+
+
+# ## Creación de la tabla dev_arpu en S3
+
+# In[ ]:
+
+
+sql = f"""UNLOAD ($$ 
+                    SELECT a.cuenta,
+                           a.monto-lag(a.monto) OVER (PARTITION BY a.cuenta ORDER BY a.fecha ASC) AS diferencias
+                    FROM credito.payments a 
+                    RIGHT JOIN (
+                                SELECT
+                                      cuenta,
+                                      idclienteunico,
+                                      fechaactivacion,
+                                      regiondsc,
+                                      clusterdsc,
+                                      nse,
+                                      estatuscuenta,
+                                      negocio,
+                                      edad_e,
+                                      behaviorscore_brm,
+                                      creditscore_sas as score,
+                                      estado,
+                                      medio_pago_favorito,
+                                      pago_domiciliado
+                                FROM data_lake.vista_unica_cuenta
+                                WHERE info_day IN (SELECT MAX(info_day) 
+                                                   FROM data_lake.vista_unica_cuenta)
+                                      AND negocio IN ('RESIDENCIAL_FISICA_ACT_EMP','RESIDENCIAL_FISICA')
+                                ) b ON a.cuenta=b.cuenta
+                    WHERE a.fecha >= {one_year_ago} AND  a.fecha < {selected_date}
+                    ORDER BY  a.cuenta
+                $$)
+                TO 's3://desarrollos-bigdata-inovacion-us-east-1/SAS/sas94/dev_arpu/{carpeta}/'
+                IAM_ROLE 'arn:aws:iam::903746939682:role/ReadTP'
+                PARALLEL OFF
+                FORMAT PARQUET
+               """
+
+
+# In[ ]:
+
+
+df1 = wr.redshift.read_sql_query(sql,conn)
+
+
+# In[ ]:
+
+
+df1.head(5)
+
+
+# In[ ]:
