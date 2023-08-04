@@ -1,0 +1,173 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Conexión a SFTP de Glassbox
+
+# ## Instalar librerias 
+
+# In[1]:
+
+
+get_ipython().system('pip install pysftp')
+
+
+# ## Importar librerias
+
+# In[2]:
+
+
+import pysftp
+import fnmatch
+import os
+
+
+# ## Variables
+
+# In[3]:
+
+
+host='sftp.gbqofs.glassboxdigital.io'
+port=22
+password='/home/ec2-user/SageMaker/Navit/SFTP/key.txt'
+username='totalplay-sftp'
+
+
+# In[4]:
+
+
+# create connection options object and ignore_known hosts check
+cnopts = pysftp.CnOpts()
+cnopts.hostkeys = None
+
+
+# ## Probar la conexión
+
+# In[5]:
+
+
+with pysftp.Connection(host=host, port=port, username=username, private_key=password, cnopts=cnopts) as sftp:
+    print("connected to sftp server!")
+
+
+# ## Ver la lista de archivos que se encuentran en SFTP
+
+# In[6]:
+
+
+with pysftp.Connection(host=host, port=port, username=username, private_key=password, cnopts=cnopts) as sftp:
+    fnames = sftp.listdir()
+    print(fnames)
+print('execution complete!')
+
+
+# ## Ver los archivos que se encuentran adentro del archivo 'import'
+
+# In[7]:
+
+
+with pysftp.Connection(host=host, port=port, username=username, private_key=password, cnopts=cnopts) as sftp:
+    fnames = sftp.listdir()
+    print(fnames)
+    fnames_in=sftp.listdir('import')
+    print(fnames_in)
+print('execution complete!')
+
+
+# ## Ver los archivos que se encuentran adentro del archivo 'attributes'
+
+# In[8]:
+
+
+with pysftp.Connection(host=host, port=port, username=username, private_key=password, cnopts=cnopts) as sftp:
+    fnames = sftp.listdir()
+    print(fnames)
+    fnames_in=sftp.listdir('import')
+    print(fnames_in)
+    fname=sftp.listdir('attributes')
+    print(fname)
+print('execution complete!')
+
+
+# In[9]:
+
+
+with pysftp.Connection(host=host, port=port, username=username, private_key=password, cnopts=cnopts) as sftp:
+    fnames = sftp.listdir()
+    print(fnames)
+    fnames_in=sftp.listdir('import')
+    print(fnames_in)
+    fname=sftp.listdir('hits')
+    print(fname)
+print('execution complete!')
+
+
+# In[10]:
+
+
+with pysftp.Connection(host=host, port=port, username=username, private_key=password, cnopts=cnopts) as sftp:
+    fnames = sftp.listdir()
+    print(fnames)
+    fnames_in=sftp.listdir('import')
+    print(fnames_in)
+    fname=sftp.listdir('mobile')
+    print(fname)
+print('execution complete!')
+
+
+# In[11]:
+
+
+with pysftp.Connection(host=host, port=port, username=username, private_key=password, cnopts=cnopts) as sftp:
+    fnames = sftp.listdir()
+    print(fnames)
+    fnames_in=sftp.listdir('import')
+    print(fnames_in)
+    fname=sftp.listdir('pageloads')
+    print(fname)
+print('execution complete!')
+
+
+# In[12]:
+
+
+with pysftp.Connection(host=host, port=port, username=username, private_key=password, cnopts=cnopts) as sftp:
+    fnames = sftp.listdir()
+    print(fnames)
+    fnames_in=sftp.listdir('import')
+    print(fnames_in)
+    fname=sftp.listdir('sessions')
+    print(fname)
+print('execution complete!')
+
+
+# In[13]:
+
+
+with pysftp.Connection(host=host, port=port, username=username, private_key=password, cnopts=cnopts) as sftp:
+    fnames = sftp.listdir()
+    print(fnames)
+    fnames_in=sftp.listdir('import')
+    print(fnames_in)
+    fname=sftp.listdir('useractions')
+    print(fname)
+print('execution complete!')
+
+
+# ## Variables de las direcciones de los directorios remotos y locales 
+
+# In[14]:
+
+
+remote_path='import/attributes'
+local_path='/home/ec2-user/SageMaker/Navit/SFTP/Glassbox'
+file_extension='.csv'
+
+
+# In[15]:
+
+
+with pysftp.Connection(host=host, port=port, username=username, private_key=password, cnopts=cnopts) as sftp:
+    for filename in sftp.listdir('remote_path'):
+        print(filename)
+    sftp.close()
+print('execution complete!')
