@@ -1,0 +1,108 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # dev_veces_mora manual
+
+# ## Instalar librerias
+
+# In[ ]:
+
+
+pip install awswrangler
+
+
+# In[ ]:
+
+
+get_ipython().system('pip install odfpy')
+
+
+# ## Importar librerias
+
+# In[ ]:
+
+
+import numpy as np
+from datetime import datetime
+import awswrangler as wr
+import pandas as pd
+import calendar
+import datetime
+from datetime import datetime
+from datetime import date
+import pytz
+from datetime import timedelta
+from dateutil.relativedelta import relativedelta
+
+
+# ## Conexion a redshift
+
+# In[ ]:
+
+
+con_redshift_2 = wr.redshift.connect("redshift_cctp_inovation")
+conn = wr.redshift.connect("redshift_devsie")
+
+
+# ## Variables para la creación de las tablas
+
+# ### Obtener fecha del día que seleccionen, de seis meses atras y de doce meses atras a la fecha seleccionada
+
+# In[ ]:
+
+
+anio=2023
+mes=3
+dia=15
+# Input the date you want 
+selected_date =datetime(anio, mes, dia)
+
+# Calculate the date 6 months ago from the selected date
+six_months_ago = selected_date - relativedelta(months=6)
+
+# Calculate the date 12 months ago from the selected date
+twelve_months_ago = selected_date - relativedelta(months=12)
+
+# Convert the datetime object back to a formatted string
+dia_selecionado=selected_date.strftime("%Y%m%d")
+six_months_ago = six_months_ago.strftime("%Y%m%d")
+twelve_months_ago = twelve_months_ago.strftime("%Y%m%d")
+
+# Corvert the datetimes to a formated int 
+dia_selecionado = int(dia_selecionado)
+six_months_ago = int(six_months_ago)
+twelve_months_ago = int(twelve_months_ago)
+
+# Print the result in a formatted way
+print("día selecionado:",dia_selecionado )
+print("Seis meses atras del día selecionado", six_months_ago)
+print("Doce meses atras del día selecionado", twelve_months_ago)
+
+
+# ## Subir la tabla dev_veces_mora a S3 en formato parquet
+
+# In[ ]:
+
+
+sql = f"""UNLOAD ($$
+                        select 
+                        cuenta,
+                        compania,
+                        substring(fecha_informacion, 1,4) as anno,
+                        substring(fecha_informacion, 5,2) as mes,
+                        substring(fecha_informacion, 7,2) as dia,
+                        morosidad ,
+                        atraso
+                        from black_box.cartera
+                        where fecha_informacion>={twelve_months_ago} and  fecha_informacion<={dia_selecionado}
+                        $$)
+                        TO 's3://desarrollos-bigdata-inovacion-us-east-1/SAS/sas94/dev_veces_mora/{dia_selecionado}/'
+                        IAM_ROLE 'arn:aws:iam::903746939682:role/ReadTP'
+                        FORMAT PARQUET
+               """
+
+
+# In[ ]:
+
+
+df1 = wr.redshift.read_sql_query(sql,conn)
