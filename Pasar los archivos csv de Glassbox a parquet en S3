@@ -1,0 +1,453 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[88]:
+
+
+import pandas as pd
+import awswrangler as wr
+import boto3
+
+
+# ## Codigo para carpeta Mobile
+
+# In[166]:
+
+
+def list_files_in_s3_folder(bucket_name, folder_path):
+    # Crea una instancia del cliente de S3
+    s3 = boto3.client('s3')
+
+    # Realiza la llamada al servicio para listar los objetos dentro del bucket y carpeta específicos
+    response = s3.list_objects_v2(Bucket=bucket_name, Prefix=folder_path)
+
+    # Verifica si hay algún contenido
+    if 'Contents' in response:
+        # Obtiene la lista de nombres de los archivos en la carpeta
+        files = [obj['Key'] for obj in response['Contents']]
+        return files
+    else:
+        return []
+
+# Reemplaza 'nombre-del-bucket' y 'ruta/dentro/de/la/carpeta' con los valores correspondientes
+bucket_name = 'desarrollos-bigdata-inovacion-us-east-1'
+folder_path = 'Navit/Glassbox/mobile/20230724'
+
+# Llama a la función para listar los archivos
+files_list = list_files_in_s3_folder(bucket_name, folder_path)
+
+# Imprime la lista de archivos
+files_list
+
+
+# In[167]:
+
+
+for lis in files_list:
+    df=pd.read_csv(f's3://desarrollos-bigdata-inovacion-us-east-1/{lis}', dtype={'UNAME':str, 'REFERRER_INFO':str,'CRASH_TYPE':str, 'CRASH_MESSAGE':str, 'CRASH_STACKTRACE':str, 'CRASH_ON_STARTUP':str,'COMPONENT_ID':str, 'ACCESSIBILITY_LABEL':str, 'VIEW_SELECTOR':str,'CUSTOM_EVENT_NAME':str, 'PAGE_URI':str, 'INTERNAL_HOST':str, 'HTTP_METHOD':str, 'CUSTOM_EVENT_PARAMS':str,'MOBILE_EVENT_TYPE':str, 'ALL_ATTRIBUTES':str })
+    a = lis[15:-4]
+    df.to_parquet(f's3://desarrollos-bigdata-inovacion-us-east-1/Navit/Glassbox_r/{a}.parquet')
+
+
+# In[143]:
+
+
+df=pd.read_csv('s3://desarrollos-bigdata-inovacion-us-east-1/Navit/Glassbox/attributes/20230723/attributes-1690146125263.csv',dtype={'SESSION_UUID':str, 'HIT_UUID':str,'ATTRIBUTE_NAME':str, 'ATTRIBUTE_VALUE':str})
+df.to_parquet(f's3://desarrollos-bigdata-inovacion-us-east-1/Navit/Glassbox_r/attributes/20230723/attributes-1690146125263.parquet')
+
+
+# ## Codigo para carpeta hits
+
+# In[155]:
+
+
+def list_files_in_s3_folder(bucket_name, folder_path):
+    # Crea una instancia del cliente de S3
+    s3 = boto3.client('s3')
+
+    # Realiza la llamada al servicio para listar los objetos dentro del bucket y carpeta específicos
+    response = s3.list_objects_v2(Bucket=bucket_name, Prefix=folder_path)
+
+    # Verifica si hay algún contenido
+    if 'Contents' in response:
+        # Obtiene la lista de nombres de los archivos en la carpeta
+        files = [obj['Key'] for obj in response['Contents']]
+        return files
+    else:
+        return []
+
+# Reemplaza 'nombre-del-bucket' y 'ruta/dentro/de/la/carpeta' con los valores correspondientes
+bucket_name = 'desarrollos-bigdata-inovacion-us-east-1'
+folder_path = 'Navit/Glassbox/hits/'
+
+# Llama a la función para listar los archivos
+files_list = list_files_in_s3_folder(bucket_name, folder_path)
+
+# Imprime la lista de archivos
+files_list
+
+
+# In[153]:
+
+
+df=pd.read_csv('s3://desarrollos-bigdata-inovacion-us-east-1/Navit/Glassbox/hits/20230724/hits-1690232678898.csv', dtype={'UNAME':str,'SESSION_UUID':str, 'USERAGENT':str, 'UABROWSER':str,'UAOS':str, 'UADEVICETYPE':str,'CLIENT_IP':str,'PACKET_IP':str,'SERVER_IP':str, 'URL_WITH_GET_PARAM':str, 'URL_PATH':str, 'REQUEST_METHOD':str, 'PROTOCOL_VERSION':str, 'HOST':str, 'LABELS':str, 'BOT_TYPE':str,'BOT_REASON':str,'INTERNAL_PAGE_NAMES':str,'ALL_ATTRIBUTES':str,'ALL_AVAILABILITY_ATTRIBUTES':str})
+df
+
+
+# In[154]:
+
+
+df.info()
+
+
+# In[156]:
+
+
+for lis in files_list:
+    df=pd.read_csv(f's3://desarrollos-bigdata-inovacion-us-east-1/{lis}', dtype={'UNAME':str,'SESSION_UUID':str, 'USERAGENT':str, 'UABROWSER':str,'UAOS':str, 'UADEVICETYPE':str,'CLIENT_IP':str,'PACKET_IP':str,'SERVER_IP':str, 'URL_WITH_GET_PARAM':str, 'URL_PATH':str, 'REQUEST_METHOD':str, 'PROTOCOL_VERSION':str, 'HOST':str, 'LABELS':str, 'BOT_TYPE':str,'BOT_REASON':str,'INTERNAL_PAGE_NAMES':str,'ALL_ATTRIBUTES':str,'ALL_AVAILABILITY_ATTRIBUTES':str})
+    a = lis[15:-4]
+    df.to_parquet(f's3://desarrollos-bigdata-inovacion-us-east-1/Navit/Glassbox_r/{a}.parquet')
+
+
+# ## Codigo para carpeta pageloads
+
+# In[168]:
+
+
+def list_files_in_s3_folder(bucket_name, folder_path):
+    # Crea una instancia del cliente de S3
+    s3 = boto3.client('s3')
+
+    # Realiza la llamada al servicio para listar los objetos dentro del bucket y carpeta específicos
+    response = s3.list_objects_v2(Bucket=bucket_name, Prefix=folder_path)
+
+    # Verifica si hay algún contenido
+    if 'Contents' in response:
+        # Obtiene la lista de nombres de los archivos en la carpeta
+        files = [obj['Key'] for obj in response['Contents']]
+        return files
+    else:
+        return []
+
+# Reemplaza 'nombre-del-bucket' y 'ruta/dentro/de/la/carpeta' con los valores correspondientes
+bucket_name = 'desarrollos-bigdata-inovacion-us-east-1'
+folder_path = 'Navit/Glassbox/pageloads/20230724/'
+
+# Llama a la función para listar los archivos
+files_list = list_files_in_s3_folder(bucket_name, folder_path)
+
+# Imprime la lista de archivos
+files_list
+
+
+# In[169]:
+
+
+for lis in files_list:
+    df=pd.read_csv(f's3://desarrollos-bigdata-inovacion-us-east-1/{lis}', dtype={'SESSION_UUID':str,'PAGE_UUID':str,'HIT_UUID':str, 'ANALYZER_ID':str,'CITY':str, 'CLIENT_IP':str,'COUNTRY':str,'HOST':str,'ISP':str,'NAVIGATION_TYPE':str, 'OS':str})
+    a = lis[15:-4]
+    df.to_parquet(f's3://desarrollos-bigdata-inovacion-us-east-1/Navit/Glassbox_r/{a}.parquet')
+
+
+# ## Codigo para carpeta sessions
+
+# In[170]:
+
+
+def list_files_in_s3_folder(bucket_name, folder_path):
+    # Crea una instancia del cliente de S3
+    s3 = boto3.client('s3')
+
+    # Realiza la llamada al servicio para listar los objetos dentro del bucket y carpeta específicos
+    response = s3.list_objects_v2(Bucket=bucket_name, Prefix=folder_path)
+
+    # Verifica si hay algún contenido
+    if 'Contents' in response:
+        # Obtiene la lista de nombres de los archivos en la carpeta
+        files = [obj['Key'] for obj in response['Contents']]
+        return files
+    else:
+        return []
+
+# Reemplaza 'nombre-del-bucket' y 'ruta/dentro/de/la/carpeta' con los valores correspondientes
+bucket_name = 'desarrollos-bigdata-inovacion-us-east-1'
+folder_path = 'Navit/Glassbox/sessions/20230724/'
+
+# Llama a la función para listar los archivos
+files_list = list_files_in_s3_folder(bucket_name, folder_path)
+
+# Imprime la lista de archivos
+files_list
+
+
+# In[171]:
+
+
+for lis in files_list:
+    df=pd.read_csv(f's3://desarrollos-bigdata-inovacion-us-east-1/{lis}', dtype={'SESSION_UUID':str, 'APPIDS':str, 'UNAME':str, 'UABROWSER':str,'UABROWSER_GROUP':str, 'UABROWSER_VERSION':str, 'UAOS':str, 'VENDOR':str,'UADEVICETYPE':str, 'CLIENT_IP':str,'CITY':str, 'COUNTRY':str, 'PACKET_IP':str, 'ANALYZER_ID':str, 'VISITOR_ID':str, 'ISP':str, 'REGION':str, 'REFERRER_HOST':str, 'REFERRER_URI':str, 'BOT_DETECTION_REASON':str,'BOT_DETECTION_TYPE':str, 'STRUGGLE_SCORE_TYPES':str,'CUSTOM_STRUGGLE_SCORE':str, 'CUSTOM_STRUGGLE_SCORE_TYPES':str,'ALL_STICKY_ATTRIBUTES':str, 'REPLAY_LINK(HOSTNAME)':str})
+    a = lis[15:-4]
+    df.to_parquet(f's3://desarrollos-bigdata-inovacion-us-east-1/Navit/Glassbox_r/{a}.parquet')
+
+
+# ## Codigo para carpeta attributes
+
+# In[172]:
+
+
+def list_files_in_s3_folder(bucket_name, folder_path):
+    # Crea una instancia del cliente de S3
+    s3 = boto3.client('s3')
+
+    # Realiza la llamada al servicio para listar los objetos dentro del bucket y carpeta específicos
+    response = s3.list_objects_v2(Bucket=bucket_name, Prefix=folder_path)
+
+    # Verifica si hay algún contenido
+    if 'Contents' in response:
+        # Obtiene la lista de nombres de los archivos en la carpeta
+        files = [obj['Key'] for obj in response['Contents']]
+        return files
+    else:
+        return []
+
+# Reemplaza 'nombre-del-bucket' y 'ruta/dentro/de/la/carpeta' con los valores correspondientes
+bucket_name = 'desarrollos-bigdata-inovacion-us-east-1'
+folder_path = 'Navit/Glassbox/attributes/20230724/'
+
+# Llama a la función para listar los archivos
+files_list = list_files_in_s3_folder(bucket_name, folder_path)
+
+# Imprime la lista de archivos
+files_list
+
+
+# In[140]:
+
+
+def eliminar_valores_por_indices(lista, indices_a_borrar):
+    # Ordenamos la lista de índices de mayor a menor para evitar problemas al borrar elementos
+    indices_a_borrar.sort(reverse=True)
+    
+    # Eliminamos los valores de la lista usando los índices proporcionados
+    for indice in indices_a_borrar:
+        if indice < len(lista):
+            lista.pop(indice)
+    
+    return lista
+
+# Ejemplo de uso
+indices_a_borrar = [0,1,3,7,11,14,18,23,27,31,34]
+
+resultado = eliminar_valores_por_indices(files_list, indices_a_borrar)
+resultado
+
+
+# In[141]:
+
+
+len(resultado)
+
+
+# In[173]:
+
+
+for lis in files_list:
+    df=pd.read_csv(f's3://desarrollos-bigdata-inovacion-us-east-1/{lis}', dtype={'SESSION_UUID':str, 'HIT_UUID':str,'ATTRIBUTE_NAME':str, 'ATTRIBUTE_VALUE':str})
+    a = lis[15:-4]
+    df.to_parquet(f's3://desarrollos-bigdata-inovacion-us-east-1/Navit/Glassbox_r/{a}.parquet')
+
+
+# ## Codigo para carpeta useractions
+
+# In[162]:
+
+
+def list_files_in_s3_folder(bucket_name, folder_path):
+    # Crea una instancia del cliente de S3
+    s3 = boto3.client('s3')
+
+    # Realiza la llamada al servicio para listar los objetos dentro del bucket y carpeta específicos
+    response = s3.list_objects_v2(Bucket=bucket_name, Prefix=folder_path)
+
+    # Verifica si hay algún contenido
+    if 'Contents' in response:
+        # Obtiene la lista de nombres de los archivos en la carpeta
+        files = [obj['Key'] for obj in response['Contents']]
+        return files
+    else:
+        return []
+
+# Reemplaza 'nombre-del-bucket' y 'ruta/dentro/de/la/carpeta' con los valores correspondientes
+bucket_name = 'desarrollos-bigdata-inovacion-us-east-1'
+folder_path = 'Navit/Glassbox/useractions/'
+
+# Llama a la función para listar los archivos
+files_list = list_files_in_s3_folder(bucket_name, folder_path)
+
+# Imprime la lista de archivos
+files_list
+
+
+# In[158]:
+
+
+len(files_list)
+
+
+# In[164]:
+
+
+li = ['Navit/Glassbox/useractions/20230723/useractions-1690121635316.csv',
+ 'Navit/Glassbox/useractions/20230723/useractions-1690125752223.csv',
+ 'Navit/Glassbox/useractions/20230723/useractions-1690129635215.csv',
+ 'Navit/Glassbox/useractions/20230723/useractions-1690133401449.csv',
+ 'Navit/Glassbox/useractions/20230723/useractions-1690136682428.csv',
+ 'Navit/Glassbox/useractions/20230723/useractions-1690139818225.csv',
+ 'Navit/Glassbox/useractions/20230723/useractions-1690143062591.csv',
+ 'Navit/Glassbox/useractions/20230723/useractions-1690146275465.csv',
+ 'Navit/Glassbox/useractions/20230723/useractions-1690149908515.csv',
+ 'Navit/Glassbox/useractions/20230724/useractions-1690153726424.csv',
+ 'Navit/Glassbox/useractions/20230724/useractions-1690157657494.csv',
+ 'Navit/Glassbox/useractions/20230724/useractions-1690161507430.csv',
+ 'Navit/Glassbox/useractions/20230724/useractions-1690165542656.csv',
+ 'Navit/Glassbox/useractions/20230724/useractions-1690169612470.csv',
+ 'Navit/Glassbox/useractions/20230724/useractions-1690173950678.csv',
+ 'Navit/Glassbox/useractions/20230724/useractions-1690180053415.csv',
+ 'Navit/Glassbox/useractions/20230724/useractions-1690192721538.csv',
+ 'Navit/Glassbox/useractions/20230724/useractions-1690207185776.csv',
+ 'Navit/Glassbox/useractions/20230724/useractions-1690211678792.csv',
+ 'Navit/Glassbox/useractions/20230724/useractions-1690214408854.csv',
+ 'Navit/Glassbox/useractions/20230724/useractions-1690216650619.csv',
+ 'Navit/Glassbox/useractions/20230724/useractions-1690218799694.csv',
+ 'Navit/Glassbox/useractions/20230724/useractions-1690220854647.csv',
+ 'Navit/Glassbox/useractions/20230724/useractions-1690222719745.csv',
+ 'Navit/Glassbox/useractions/20230724/useractions-1690224622909.csv',
+ 'Navit/Glassbox/useractions/20230724/useractions-1690226525617.csv',
+ 'Navit/Glassbox/useractions/20230724/useractions-1690228437800.csv',
+ 'Navit/Glassbox/useractions/20230724/useractions-1690230497754.csv',
+ 'Navit/Glassbox/useractions/20230724/useractions-1690232544671.csv',
+ 'Navit/Glassbox/useractions/20230724/useractions-1690234611621.csv',
+ 'Navit/Glassbox/useractions/20230724/useractions-1690236894911.csv',
+ 'Navit/Glassbox/useractions/20230724/useractions-1690239104282.csv']
+
+
+# In[165]:
+
+
+for lis in li:
+    df=pd.read_csv(f's3://desarrollos-bigdata-inovacion-us-east-1/{lis}', dtype={'SESSION_UUID':str,'HIT_UUID':str,'PAGE_UUID':str, 'ACTION_EXTERNAL_ID':str, 'ACTION_ID':str,'ACTION_NATURAL_NAME':str, 'ACTION_VISUAL_NAME':str, 'ANALYZER_ID':str, 'APPID':str,'CITY':str, 'CLIENT_ACTION':str, 'CLIENT_IP':str, 'COUNTRY':str,'DOM_ELEMENT':str,'DOM_VALUE':str, 'LAST_SEGMENT':str, 'HOST':str, 'ISP':str, 'OS':str, 'PAGE_ID':str, 'PROBE_ID':str, 'REFERRER_HOST':str,'REGION':str, 'RESOLUTION_FAMILY':str, 'UABROWSER':str, 'UABROWSER_GROUP':str,'UADEVICETYPE':str, 'URI':str, 'VENDOR':str})
+    a = lis[15:-4]
+    df.to_parquet(f's3://desarrollos-bigdata-inovacion-us-east-1/Navit/Glassbox_r/{a}.parquet')
+
+
+# In[ ]:
+
+
+
+
+
+# In[ ]:
+
+
+
+
+
+# In[159]:
+
+
+df=pd.read_csv('s3://desarrollos-bigdata-inovacion-us-east-1/Navit/Glassbox/useractions/20230724/useractions-1690239104282.csv', dtype={'SESSION_UUID':str,'HIT_UUID':str,'PAGE_UUID':str, 'ACTION_EXTERNAL_ID':str, 'ACTION_ID':str,'ACTION_NATURAL_NAME':str, 'ACTION_VISUAL_NAME':str, 'ANALYZER_ID':str, 'APPID':str,'CITY':str, 'CLIENT_ACTION':str, 'CLIENT_IP':str, 'COUNTRY':str,'DOM_ELEMENT':str,'DOM_VALUE':str, 'LAST_SEGMENT':str, 'HOST':str, 'ISP':str, 'OS':str, 'PAGE_ID':str, 'PROBE_ID':str, 'REFERRER_HOST':str,'REGION':str, 'RESOLUTION_FAMILY':str, 'UABROWSER':str, 'UABROWSER_GROUP':str,'UADEVICETYPE':str, 'URI':str, 'VENDOR':str})
+df
+
+
+# In[ ]:
+
+
+{'SESSION_UUID':str,'HIT_UUID':str,'PAGE_UUID':str, 'ACTION_EXTERNAL_ID':str, 'ACTION_ID':str,'ACTION_NATURAL_NAME':str, 'ACTION_VISUAL_NAME':str, 'ANALYZER_ID':str, 'APPID':str,'CITY':str, 'CLIENT_ACTION':str, 'CLIENT_IP':str, 'COUNTRY':str,'DOM_ELEMENT':str,'DOM_VALUE':str, 'LAST_SEGMENT':str, 'HOST':str, 'ISP':str, 'OS':str, 'PAGE_ID':str, 'PROBE_ID':str, 'REFERRER_HOST':str,'REGION':str, 'RESOLUTION_FAMILY':str, 'UABROWSER':str, 'UABROWSER_GROUP':str,'UADEVICETYPE':str, 'URI':str, 'VENDOR':str}
+
+
+# In[160]:
+
+
+df.columns
+
+
+# In[161]:
+
+
+df.info()
+
+
+# 
+
+# In[ ]:
+
+
+
+
+
+# In[ ]:
+
+
+
+
+
+# In[ ]:
+
+
+def convert_to_str(value):
+    return str(value) if type(value) == object else value
+
+# Aplicar la función a cada celda del DataFrame
+df = df.applymap(convert_to_str)
+
+# Mostrar información sobre los tipos de datos después del cambio
+print(df.dtypes)
+
+
+# In[50]:
+
+
+a ='Navit/Glassbox/mobile/20230721/mobile-1689956991914.csv'
+a=a[15:-4]
+a
+
+
+# In[10]:
+
+
+df.to_parquet('s3://desarrollos-bigdata-inovacion-us-east-1/Navit/Glassbox_r/mobile/20230712/mobile-1689170320267.parquet')
+
+
+# ## 1-.Listar todos los archivos
+# 
+
+# In[9]:
+
+
+df.info()
+'COMPONENT_ID':str, 'ACCESSIBILITY_LABEL':str, 'VIEW_SELECTOR':str,'CUSTOM_EVENT_NAME':str, 'PAGE_URI':str, 'INTERNAL_HOST':str, 'HTTP_METHOD':str, 'CUSTOM_EVENT_PARAMS':str,'MOBILE_EVENT_TYPE':str, 'ALL_ATTRIBUTES':str
+
+
+# In[12]:
+
+
+data = pd.('s3://desarrollos-bigdata-inovacion-us-east-1/Navit/Glassbox/attributes/')
+
+
+# In[32]:
+
+
+s3 = boto3.resource('s3',
+                    aws_access_key_id= 'AKIA5E24D5MRP2KHTYPL',
+                    aws_secret_access_key='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')
+bucket_name = 'desarrollos-bigdata-inovacion-us-east-1'
+folder_path = 'Navit/Glassbox/mobile/20230712/'  # Make sure to include the trailing slash '/'
+response = s3.list_objects_v2(Bucket=bucket_name, Prefix=folder_path)
+if 'Contents' in response:
+    objects = response['Contents']
+    for obj in objects:
+        print(obj['Key'])  # This will print the object key (full path) of each file in the folder
+else:
+    print("The folder is empty.")
+
+
+# In[37]:
