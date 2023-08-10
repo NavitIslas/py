@@ -1,0 +1,100 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Crawlers
+
+# ## Instalar librerias
+
+# In[1]:
+
+
+pip install awswrangler
+
+
+# In[2]:
+
+
+get_ipython().system('pip install odfpy')
+
+
+# In[3]:
+
+
+pip install boto3 botocore
+
+
+# ## Importar librerias
+
+# In[4]:
+
+
+import numpy as np
+from datetime import datetime
+import awswrangler as wr
+import pandas as pd
+import calendar
+import datetime
+from datetime import datetime
+from datetime import date
+import pytz
+from datetime import timedelta
+from dateutil.relativedelta import relativedelta
+import boto3
+from botocore.exceptions import ClientError
+
+
+# ## Correr Crawler dev_arpu_3
+
+# In[5]:
+
+
+# Initialize a Boto3 Glue client
+glue_client = boto3.client('glue', region_name='us-east-1')
+
+# Replace 'your-crawler-name' with the name of your Glue Crawler
+crawler_name = 'dev_arpu_3'
+
+# Start the Glue Crawler
+response = glue_client.start_crawler(Name=crawler_name)
+
+# Print the response or handle it as needed
+print(response)
+
+
+# ## Correr Crawler dev_veces_mora_6meses_4
+
+# In[6]:
+
+
+# Initialize a Boto3 Glue client
+glue_client = boto3.client('glue', region_name='us-east-1')
+
+# Replace 'your-crawler-name' with the name of your Glue Crawler
+crawler_name = 'dev_veces_mora_6meses_4'
+
+# Start the Glue Crawler
+response = glue_client.start_crawler(Name=crawler_name)
+
+# Print the response or handle it as needed
+print(response)
+
+
+# ## Correr Crawler dev_veces_mora_4
+
+# In[7]:
+
+
+# Initialize a Boto3 Glue client
+glue_client = boto3.client('glue', region_name='us-east-1')
+
+# Replace 'your-crawler-name' with the name of your Glue Crawler
+crawler_name = 'dev_veces_mora_4'
+
+# Start the Glue Crawler
+response = glue_client.start_crawler(Name=crawler_name)
+
+# Print the response or handle it as needed
+print(response)
+
+
+# In[ ]:
