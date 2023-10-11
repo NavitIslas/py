@@ -202,7 +202,14 @@ if not df1.empty:
                         PARALLEL OFF
                         FORMAT PARQUET
                """
-            df = wr.redshift.read_sql_query(sql,con_redshift_2)
+            conn = wr.redshift.connect("redshift_devsie")
+
+            with conn.cursor() as cursor:
+                 cursor.execute(sql)
+                 cursor.execute("commit;")
+
+            conn.close()
+
         else:
             print("Ya existe la carpeta en S3.")
     else:
