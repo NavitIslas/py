@@ -1,0 +1,125 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Carga de información a S3 Contracargos
+
+# ## Importar librerias
+
+# In[12]:
+
+
+import pandas as pd
+import awswrangler as wr
+import numpy as np
+from datetime import datetime
+import awswrangler as wr
+import pandas as pd
+import calendar
+import datetime
+from datetime import datetime
+from datetime import date
+import pytz
+from datetime import timedelta
+from dateutil.relativedelta import relativedelta
+import boto3
+from botocore.exceptions import ClientError
+
+
+# ## Lectura de archivo de contracargos
+
+# In[18]:
+
+
+path='s3://desarrollos-bigdata-inovacion-us-east-1/SAS/contracargos_raw/contracargos_20231106.csv'
+nombre=path[66:-4]
+print(nombre)
+carpeta=path[79:-4]
+print(carpeta)
+
+
+# In[51]:
+
+
+df = pd.read_excel('s3://desarrollos-bigdata-inovacion-us-east-1/Insumos_listas/TP_GO/GO_ingrid.xlsx', dtype=str) ##44,846 
+
+
+# In[57]:
+
+
+df
+
+
+# In[56]:
+
+
+df.columns= ['CUENTA']
+
+
+# In[58]:
+
+
+df.to_parquet('s3://desarrollos-bigdata-inovacion-us-east-1/SAS/sas94/TP_GO/20231121/Cuentas_TP_GO.parquet')
+
+
+# In[19]:
+
+
+df = pd.read_csv(f'{path}',sep=',',dtype={'CUENTA':str}) ##44,846 
+df pd.read_excel
+
+
+# In[ ]:
+
+
+
+
+
+# In[20]:
+
+
+df['FECHA_CARGO'] = pd.to_datetime(df['FECHA_CARGO'], format='%Y-%m-%d %H:%M:%S.000')
+
+
+# In[21]:
+
+
+df['FECHA_ALTA'] = pd.to_datetime(df['FECHA_ALTA'], format='%Y-%m-%d %H:%M:%S.000')
+
+
+# In[22]:
+
+
+df
+
+
+# ## Enviar el archivo a S3 en formato parquet
+
+# In[23]:
+
+
+df.to_parquet(f's3://desarrollos-bigdata-inovacion-us-east-1/SAS/sas94/dev_contracargos/{carpeta}/{nombre}.parquet')
+
+
+# ## Correr crawler
+
+# In[24]:
+
+
+# Initialize a Boto3 Glue client
+glue_client = boto3.client('glue', region_name='us-east-1')
+
+# Replace 'your-crawler-name' with the name of your Glue Crawler
+crawler_name = 'contrcargos_descartes_SAS_crawler'
+
+# Start the Glue Crawler
+response = glue_client.start_crawler(Name=crawler_name)
+
+# Print the response or handle it as needed
+print(response)
+
+
+# In[ ]:
+
+
+
+
