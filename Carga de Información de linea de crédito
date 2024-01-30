@@ -1,0 +1,117 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Carga de Información de linea de crédito
+
+# ## Importar librerias
+
+# In[1]:
+
+
+import pandas as pd
+import awswrangler as wr
+
+
+# ## Leer el archivo de S3
+
+# In[ ]:
+
+
+# slf dia 29 de Agosto
+path_s3 = 's3://desarrollos-bigdata-inovacion-us-east-1/SAS/SLF_bulk/20231010/bulkQuery_result_7503f000007gPfkAAE_7513f00000CwAvkAAF_7523f000008iy3F.csv'
+#dfslf = pd.read_csv('s3://desarrollos-bigdata-inovacion-us-east-1/SAS/bulkQuery_result_7503f000007g7qaAAA_7513f00000CvsisAAB_7523f000008ihUY.csv',quotechar="'",dtype={'Cuenta_Factura__r.IdCuentaBRM__c':str})
+dfslf = pd.read_csv(path_s3,quotechar="'",dtype={'Cuenta_Factura__r.IdCuentaBRM__c':str})
+
+
+# In[4]:
+
+
+# slf dia 29 de Agosto
+path_s3 = 's3://desarrollos-bigdata-inovacion-us-east-1/Navit/Prueba/Baja_Cuentas_SIN_FISERV_20240117.txt'
+#dfslf = pd.read_csv('s3://desarrollos-bigdata-inovacion-us-east-1/SAS/bulkQuery_result_7503f000007g7qaAAA_7513f00000CvsisAAB_7523f000008ihUY.csv',quotechar="'",dtype={'Cuenta_Factura__r.IdCuentaBRM__c':str})
+dfslf = pd.read_csv(path_s3,quotechar="'",dtype={'cuenta':str})
+
+
+# In[5]:
+
+
+dfslf
+
+
+# In[ ]:
+
+
+dfslf.head()
+
+
+# In[ ]:
+
+
+dfslf['"Id"'] = dfslf['"Id"'].str.strip('"')
+#dfslf['"Id"'] = dfslf['"Id"'].str.replace('[^a-zA-Z0-9]', '', regex=True)
+dfslf['"Estatus__c"'] = dfslf['"Estatus__c"'].str.strip('"')
+dfslf['"Name"'] = dfslf['"Name"'].str.replace('[^a-zA-Z0-9]', '', regex=True)
+#dfslf['"Cuenta_Factura__r.IdCuentaBRM__c"'] = dfslf['"Cuenta_Factura__r.IdCuentaBRM__c"'].str.replace('[^a-zA-Z0-9]', '', regex=True)
+#dfslf['"Estatus__c"'] = dfslf['"Estatus__c"'].str.replace('[^a-zA-Z0-9]', '', regex=True)
+#dfslf['"LImite_de_credito__c"'] = dfslf['"LImite_de_credito__c"'].str.replace('[^a-zA-Z0-9]', '', regex=True)
+dfslf['"Proveedor__c"'] = dfslf['"Proveedor__c"'].str.replace('[^a-zA-Z0-9]', '', regex=True)
+dfslf['"Tipo_de_credito__c"'] = dfslf['"Tipo_de_credito__c"'].str.replace('[^a-zA-Z0-9]', '', regex=True)
+dfslf['"Tienda__c"'] = dfslf['"Tienda__c"'].str.replace('[^a-zA-Z0-9]', '', regex=True)
+#dfslf['"CreatedDate"'] = dfslf['"CreatedDate"'].str.replace('[^a-zA-Z0-9]', '', regex=True)
+dfslf['"CreatedDate"'] = dfslf['"CreatedDate"'].str.strip('"')
+dfslf['"Cuenta_Factura__r.IdCuentaBRM__c"'] = dfslf['"Cuenta_Factura__r.IdCuentaBRM__c"'].str.strip('"')
+dfslf['"LImite_de_credito__c"'] = dfslf['"LImite_de_credito__c"'].str.strip('"')
+
+
+# In[ ]:
+
+
+dfslf
+
+
+# In[ ]:
+
+
+dfslf.info()
+
+
+# In[ ]:
+
+
+dfslf.rename(columns={'"Id"': "Id"}, inplace=True) 
+dfslf.rename(columns={'"Name"': "Name"}, inplace=True) 
+dfslf.rename(columns={'"Cuenta_Factura__r.IdCuentaBRM__c"': "Cuenta_Factura__r.IdCuentaBRM__c"}, inplace=True) 
+dfslf.rename(columns={'"Estatus__c"': "Estatus__c"}, inplace=True) 
+dfslf.rename(columns={'"LImite_de_credito__c"': "LImite_de_credito__c"}, inplace=True) 
+dfslf.rename(columns={'"Proveedor__c"': "Proveedor__c"}, inplace=True) 
+dfslf.rename(columns={'"Tienda__c"': "Tienda__c"}, inplace=True) 
+dfslf.rename(columns={'"limiteMaximoDeCredito__c"': "limiteMaximoDeCredito__c"}, inplace=True) 
+dfslf.rename(columns={'"CreatedDate"': "CreatedDate"}, inplace=True) 
+dfslf.rename(columns={'"Tipo_de_credito__c"': "Tipo_de_credito__c"}, inplace=True)
+
+
+# In[ ]:
+
+
+dfslf
+
+
+# ## Carga del archivo en S3 en formato parquet
+
+# In[ ]:
+
+
+dfslf.to_parquet('s3://desarrollos-bigdata-inovacion-us-east-1/SAS/sas94/Linea_Credito__c/20231010/dfslf_20231010_2.parquet')
+
+
+# In[6]:
+
+
+dfslf.to_parquet('s3://desarrollos-bigdata-inovacion-us-east-1/Navit/bajas_cuentas_sin_fiserv/dfslf.parquet')
+
+
+# In[ ]:
+
+
+
+
