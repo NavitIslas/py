@@ -1,0 +1,87 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Poner headers a las tablas finales del credit score
+
+# ## Importar librerias
+
+# In[1]:
+
+
+import pandas as pd
+import awswrangler as wr
+import numpy as np
+from datetime import datetime
+import awswrangler as wr
+import pandas as pd
+import calendar
+import datetime
+from datetime import datetime
+from datetime import date
+import pytz
+from datetime import timedelta
+from dateutil.relativedelta import relativedelta
+import boto3
+from botocore.exceptions import ClientError
+
+
+# ## Obtener nombre del archivo para mandar el archivo a parquet
+
+# In[2]:
+
+
+path='s3://desarrollos-bigdata-inovacion-us-east-1/SAS/sas94/score_sas_tp/202401/FM_SCORING_RES_31DEC2023.csv'
+
+nombre=path[75:-4]
+print(nombre)
+
+
+# ## Lectura del archivo en csv
+
+# In[3]:
+
+
+df = pd.read_csv(f'{path}',sep=',',header=None,dtype={1:str})
+df.head()
+
+
+# ## Ponerle los nombres a las columnas
+
+# In[4]:
+
+
+df.columns=['account_rank','cuenta','prob6semanas','score','fecha']
+df.head()
+
+
+# ## Enviar el archivo a S3 en formato parquet
+
+# In[5]:
+
+
+df.to_parquet(f's3://desarrollos-bigdata-inovacion-us-east-1/SAS/sas94/score_sas_tp/202401/{nombre}.parquet')
+
+
+# ## Correr crawler
+
+# In[6]:
+
+
+# # Initialize a Boto3 Glue client
+# glue_client = boto3.client('glue', region_name='us-east-1')
+
+# # Replace 'your-crawler-name' with the name of your Glue Crawler
+# crawler_name = 'Linea_Credito__c'
+
+# # Start the Glue Crawler
+# response = glue_client.start_crawler(Name=crawler_name)
+
+# # Print the response or handle it as needed
+# print(response)
+
+
+# In[ ]:
+
+
+
+
