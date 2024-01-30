@@ -1,0 +1,953 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Cambio de valores de parametros
+
+# ## Importar librerias
+
+# In[64]:
+
+
+import os
+import numpy as np
+import requests
+import xmltodict
+import csv
+import pandas as pd
+import json
+import time
+import pandas as pd
+from requests.exceptions import ConnectionError
+import awswrangler as wr
+import boto3
+import re
+import calendar
+import datetime
+from datetime import datetime
+from datetime import date
+import pytz
+from datetime import timedelta
+from dateutil.relativedelta import relativedelta
+import subprocess
+from email.message import EmailMessage
+import smtplib
+from botocore.exceptions import NoCredentialsError
+import random
+import string
+
+
+# ## Función para obtener la fecha a día vencido
+
+# In[ ]:
+
+
+def fecha():
+    query = f"""select *
+            from credit_audit.historico_ejecucion
+            where fecha_ejecucion = (select max(fecha_ejecucion) from credit_audit.historico_ejecucion)
+            ;"""
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    df = wr.redshift.read_sql_query(query, conn)
+    fecha=df['info_day'][0]
+    fecha_actual= fecha.strftime("%Y%m%d")
+    mes_actual= fecha.strftime("%Y%m")
+    infoday = fecha.strftime('%Y-%m-%d')
+    fecha_actual = int(fecha_actual)
+    mes_actual = int(mes_actual)
+    return(fecha_actual,mes_actual)
+
+
+# ## Función para obtener la fecha y hora de ejecución
+
+# In[ ]:
+
+
+def timestamp():
+    # Calcular Fecha y hora de ejecución para colocarsela a cada una de las cuentas
+    # Configura la zona horaria de México Central (CT)
+    mexico_central = pytz.timezone('America/Mexico_City')
+    # Obtiene la fecha y hora actual en la zona horaria de México Central
+    current_time = datetime.now(mexico_central)
+    # Formatea la fecha y hora actual según tus necesidades
+    formatted_time = current_time.strftime('%Y-%m-%d %H:%M:%S')
+    return(formatted_time)
+
+
+# ## Función para consultar la tabla de control de insumos
+
+# In[ ]:
+
+
+def control_insumos():
+    fecha_actual,mes_actual=fecha()
+    sql1 = f""" SELECT "data_staging.ta_slf_cuentafactura__c",
+                       "data_lake.tp_reportes_pagos_brm",
+                       "black_box.cartera",
+                       "data_staging.slf_grupocodificacion__c",
+                       "data_staging.ta_slf_case",
+                       "data_lake.funnel_adopcion_extract",
+                       "credito_ext.funnel_adopcion"
+                FROM public.Tabla_control_insumos
+                WHERE partition_0= {mes_actual}
+                      and fecha_validacion={fecha_actual}
+                limit 100;
+                   """
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    df1 = wr.redshift.read_sql_query(sql1,conn)
+    
+    ultima_fila = df1.iloc[-1, :]
+    
+    return(ultima_fila)
+
+
+# ## Funcion que se trae una muestra de las bases
+
+# In[ ]:
+
+
+def muestra(base):
+    fecha_actual,mes_actual=fecha()
+    sql2 = f""" SELECT *
+            FROM {base}
+            WHERE partition_0= '{fecha_actual}'
+            limit 100;
+        """
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    df2 = wr.redshift.read_sql_query(sql2,conn)
+    return(df2)
+
+
+# ## Función para ejecutar los programas shell
+
+# In[ ]:
+
+
+def ejecucion_sh(comando):
+    # Ejecuta el comando en la terminal y captura la salida
+    resultado = subprocess.run(comando, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+
+    # Imprime la salida del comando
+    print("Salida del comando:")
+    print(resultado.stdout)
+
+    # Imprime la salida de error, si hay
+    if resultado.stderr:
+        print("Error del comando:")
+        print(resultado.stderr)
+
+
+# ## Función para ejecutar el modelo 
+
+# In[ ]:
+
+
+def ejecucion_modelo():
+    ultima_fila= control_insumos()
+    if ultima_fila.eq('Correcto').all():
+        print("**********************Atención especial**********************")
+        # Define la línea de código que deseas ejecutar en la terminal
+        comando = "bash  /opt/sas/SASHomeCompute/SASFoundation/9.4/code_m/asignacion_lc/atencion_especial.sh"
+        ejecucion_sh(comando)
+        print("*************************************************************")
+        #print("***************************Nombres***************************")
+        # Define la línea de código que deseas ejecutar en la terminal
+        comando = "bash /sasdataTP/nombres.sh"
+        ejecucion_sh(comando)
+        print("*************************************************************")
+        print("*******************Lc_tablas y Matriz_base*******************")
+        # Define la línea de código que deseas ejecutar en la terminal
+        comando = "bash /sasdataTP/matriz_base.sh"
+        ejecucion_sh(comando)
+        print("*************************************************************")
+        print("**********************Reportes**********************")
+        # Define la línea de código que deseas ejecutar en la terminal
+        comando = "bash /sasdataTP/reportes.sh"
+        ejecucion_sh(comando)
+        print("*************************************************************")
+
+    else:
+        print("Al menos un renglón de la última fila no dice 'Correcto'")
+
+
+# ## Función para verificar si ya existe un modelo que tenga exactamente los mismos parametros
+# 
+# ### Pedir a los de CRMWeb que validacion de tipo de dato de input, alerta si es incorrecta (Condicional)
+# 
+
+# In[59]:
+
+
+def val_existencia_modelo():    
+    query = f"""select *
+                from credit_audit.historico_modelos
+                ;"""
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    df1 = wr.redshift.read_sql_query(query, conn)
+    query = f"""select *
+                from credit_audit.historico_ejecucion
+                where fecha_ejecucion = (select max(fecha_ejecucion) from credit_audit.historico_ejecucion)
+                ;"""
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    df2 = wr.redshift.read_sql_query(query, conn)
+    filas=df1['id_modelo'].to_list()
+    for fila in filas:
+        df=df1[df1['id_modelo']== f'{fila}']
+        df=df.drop(columns=['id_modelo','id_ejecucion','usuario','info_day'])
+        columnas=df.columns.to_list()
+        df2 =df2[columnas]
+        # Asegúrate de que ambos DataFrames tengan un índice único
+        df.index = [0]
+        df2.index = [0]
+
+        # Identificar columnas con diferencias
+        columnas_diferentes = df.columns[df.ne(df2).any()]
+
+        # Crear un nuevo DataFrame con las columnas diferentes
+        resultado_df = df2[columnas_diferentes]
+        id=[]
+        if resultado_df.empty:
+            id.append(f'{fila}')
+            break
+    return(id)
+
+
+# ## Función para generar el id_modelo aleatoriamente
+
+# In[65]:
+
+
+def generar_alfanumerico():
+    # Generar 3 números aleatorios y 3 letras aleatorias
+    numeros_aleatorios = ''.join(random.choices(string.digits, k=5))
+    letras_aleatorias = ''.join(random.choices(string.ascii_letters, k=5))
+
+    # Combinar números y letras
+    alfanumerico_aleatorio = numeros_aleatorios + letras_aleatorias
+
+    # Convertir la cadena a una lista y mezclar los caracteres
+    alfanumerico_lista = list(alfanumerico_aleatorio)
+    random.shuffle(alfanumerico_lista)
+
+    # Convertir la lista de nuevo a una cadena
+    alfanumerico_mezclado = ''.join(alfanumerico_lista)
+
+    return alfanumerico_mezclado
+
+
+# ## Funcion para añadir modelo al historico de modelos
+
+# In[66]:
+
+
+def anadir_modelo():
+    id_modelo=generar_alfanumerico()
+    print(id_modelo)
+    query = f"""UPDATE credit_audit.historico_ejecucion
+                SET id_modelo = '{id_modelo}'
+                where fecha_ejecucion = (select max(fecha_ejecucion) from credit_audit.historico_ejecucion);
+                ;"""
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        cursor.execute("commit;")
+    conn.close()
+    query = f"""INSERT INTO credit_audit.historico_modelos(id_modelo,
+    id_ejecucion,
+    usuario,
+    info_day,
+    antiguedad,
+    edad_min,
+    edad_max,
+    edad_tope,
+    atraso,
+    mora_historica,
+    score_brm,
+    score_sas,
+    churn,
+    score_sas_1,
+    score_sas_2,
+    score_sas_3,
+    score_sas_4,
+    score_sas_5,
+    score_sas_6,
+    score_sas_7,
+    score_sas_8,
+    antiguedad_m_1,
+    antiguedad_m_2,
+    antiguedad_m_3,
+    max_mora_dpd_1,
+    max_mora_dpd_2,
+    max_mora_dpd_3,
+    max_mora_dpd_4,
+    edad_e_1,
+    edad_e_2,
+    gasto1,
+    gasto2,
+    gasto3,
+    gasto4,
+    gasto5,
+    gasto6,
+    gasto7,
+    gasto8,
+    sueldo_1,
+    sueldo_2,
+    sueldo_3,
+    sueldo_4,
+    sueldo_5,
+    sueldo_6,
+    sueldo_7,
+    sueldo_8,
+    factor_linea5_1,
+    factor_linea5_2,
+    factor_linea5_3,
+    factor_linea5_4,
+    factor_linea5_5,
+    linea_calc2_t_min,
+    linea_calc2_d_min,
+    linea_calc2_t_max,
+    linea_calc2_d_max,
+    linea_final_totalshop1_min,
+    linea_final_totalshop1_max,
+    linea_final_delivery1_min,
+    linea_final_delivery1_max,
+    max_morosidad_t0,
+    max_morosidad_t6,
+    max_mora_dpd,
+    score,
+    behaviorscore_brm,
+    antiguedad_m,
+    sum_count_90,
+    sum_count_60,
+    sum_count_30,
+    factor_linea6_1,
+    factor_linea6_2,
+    factor_linea6_3,
+    factor_linea6_4,
+    factor_linea6_5,
+    linea_calc3_cte_1,
+    linea_calc3_cte_2,
+    linea_calc3_cte_3,
+    linea_calc2_cte_1,
+    linea_calc2_cte_2,
+    linea_calc2_cte_3,
+    linea_final_totalshop2_cte_1,
+    linea_final_totalshop2_cte_2,
+    linea_final_totalshop2_cte_3,
+    linea_final_tshop_1,
+    linea_final_tshop_2,
+    linea_final_delivery_1,
+    linea_final_delivery_2,
+    linea_final_delivery_3,
+    antiguedad_m_cte ) 
+    VALUES ('{df2['id_modelo'][0]}',{ df2['id_ejecucion'][0]},'{ df2['usuario'][0]}','{ df2['info_day'][0]}',{ df2['antiguedad'][0]},{ df2['edad_min'][0]},{ df2['edad_max'][0]},{ df2['edad_tope'][0]},{ df2['atraso'][0]},{ df2['mora_historica'][0]},{ df2['score_brm'][0]},{ df2['score_sas'][0]},{ df2['churn'][0]},{ df2['score_sas_1'][0]},{ df2['score_sas_2'][0]},{ df2['score_sas_3'][0]},{ df2['score_sas_4'][0]},{ df2['score_sas_5'][0]},{ df2['score_sas_6'][0]},{ df2['score_sas_7'][0]},{ df2['score_sas_8'][0]},{ df2['antiguedad_m_1'][0]},{ df2['antiguedad_m_2'][0]},{ df2['antiguedad_m_3'][0]},{ df2['max_mora_dpd_1'][0]},{ df2['max_mora_dpd_2'][0]},{ df2['max_mora_dpd_3'][0]},{ df2['max_mora_dpd_4'][0]},{ df2['edad_e_1'][0]},{ df2['edad_e_2'][0]},{ df2['gasto1'][0]},{ df2['gasto2'][0]},{ df2['gasto3'][0]},{ df2['gasto4'][0]},{ df2['gasto5'][0]},{ df2['gasto6'][0]},{ df2['gasto7'][0]},{ df2['gasto8'][0]},{ df2['sueldo_1'][0]},{ df2['sueldo_2'][0]},{ df2['sueldo_3'][0]},{ df2['sueldo_4'][0]},{ df2['sueldo_5'][0]},{ df2['sueldo_6'][0]},{ df2['sueldo_7'][0]},{ df2['sueldo_8'][0]},{ df2['factor_linea5_1'][0]},{ df2['factor_linea5_2'][0]},{ df2['factor_linea5_3'][0]},{ df2['factor_linea5_4'][0]},{ df2['factor_linea5_5'][0]},{ df2['linea_calc2_t_min'][0]},{ df2['linea_calc2_d_min'][0]},{ df2['linea_calc2_t_max'][0]},{ df2['linea_calc2_d_max'][0]},{ df2['linea_final_totalshop1_min'][0]},{ df2['linea_final_totalshop1_max'][0]},{ df2['linea_final_delivery1_min'][0]},{ df2['linea_final_delivery1_max'][0]},{ df2['max_morosidad_t0'][0]},{ df2['max_morosidad_t6'][0]},{ df2['max_mora_dpd'][0]},{ df2['score'][0]},{ df2['behaviorscore_brm'][0]},{ df2['antiguedad_m'][0]},{ df2['sum_count_90'][0]},{ df2['sum_count_60'][0]},{ df2['sum_count_30'][0]},{ df2['factor_linea6_1'][0]},{ df2['factor_linea6_2'][0]},{ df2['factor_linea6_3'][0]},{ df2['factor_linea6_4'][0]},{ df2['factor_linea6_5'][0]},{ df2['linea_calc3_cte_1'][0]},{ df2['linea_calc3_cte_2'][0]},{ df2['linea_calc3_cte_3'][0]},{ df2['linea_calc2_cte_1'][0]},{ df2['linea_calc2_cte_2'][0]},{ df2['linea_calc2_cte_3'][0]},{ df2['linea_final_totalshop2_cte_1'][0]},{ df2['linea_final_totalshop2_cte_2'][0]},{ df2['linea_final_totalshop2_cte_3'][0]},{ df2['linea_final_tshop_1'][0]},{ df2['linea_final_tshop_2'][0]},{ df2['linea_final_delivery_1'][0]},{ df2['linea_final_delivery_2'][0]},{ df2['linea_final_delivery_3'][0]},{ df2['antiguedad_m_cte'][0]});"""
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        cursor.execute("commit;")
+    conn.close()
+
+
+# ## Función para actualizar la base dinamica con los datos de la base de ejecución del modelo
+
+# In[ ]:
+
+
+def update_base(base):
+    query = f"""select *
+                from {base}
+                ;"""
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    df1 = wr.redshift.read_sql_query(query, conn)
+    columnas = df1.columns.to_list()
+    query = f"""select *
+                from credit_audit.historico_ejecucion
+                where fecha_ejecucion = (select max(fecha_ejecucion) from credit_audit.historico_ejecucion)
+                ;"""
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    df2 = wr.redshift.read_sql_query(query, conn)
+    df2 =df2[columnas]
+    # Asegúrate de que ambos DataFrames tengan un índice único
+    df1.index = [0]
+    df2.index = [0]
+
+    # Identificar columnas con diferencias
+    columnas_diferentes = df1.columns[df1.ne(df2).any()]
+
+    # Crear un nuevo DataFrame con las columnas diferentes
+    resultado_df = df2[columnas_diferentes]
+
+    # Mostrar el nuevo DataFrame
+    resultado_df
+    columnas = resultado_df.columns.to_list()
+    for columna in columnas:
+        if pd.api.types.is_numeric_dtype(resultado_df.dtypes[columna]):
+            query = f"""UPDATE {base}
+                        SET {columna} = {resultado_df[f'{columna}'][0]};
+                        ;"""
+            boto3.setup_default_session(region_name="us-east-1")
+            conn = wr.redshift.connect("redshift_devsie")
+            with conn.cursor() as cursor:
+                cursor.execute(query)
+                cursor.execute("commit;")
+            conn.close()
+        elif pd.api.types.is_string_dtype(resultado_df.dtypes[columna]) | pd.api.types.is_object_dtype(resultado_df.dtypes[columna]):
+            query = f"""UPDATE {base}
+                        SET {columna} = '{resultado_df[f'{columna}'][0]}';
+                        ;"""
+            boto3.setup_default_session(region_name="us-east-1")
+            conn = wr.redshift.connect("redshift_devsie")
+            with conn.cursor() as cursor:
+                cursor.execute(query)
+                cursor.execute("commit;")
+            conn.close()
+
+
+# ## Función para enviar el correo
+
+# In[ ]:
+
+
+def enviar_correos(remitente, password, receivers,subject ,mensaje):
+    email = EmailMessage()
+    email["From"] = remitente
+    email["to"] = receivers
+    email["Subject"] = f'{subject}'
+    email.set_content(mensaje)
+
+    listas_correos = ', '.join(receivers)
+    smtp = smtplib.SMTP_SSL('smtp.gmail.com')
+
+    password = "csvj ukly dulz lutm".encode('ascii', 'ignore').decode('ascii')
+    smtp.login(remitente,password)
+    # tener el log (235, b'2.7.0 Accepted')
+
+    smtp.sendmail(remitente,receivers,email.as_string())
+    smtp.quit()
+
+
+# ## Solicitar a CRMWeb que mapee la tabla de historico con id, usuario y hora (id_ejecucion , vez que se ejecuto)
+# 
+# ## Solicitar que no se puede correr dos modelos al mismo tiempo (por ahora) 
+# 
+# ## impedir fecha futura (infoday)
+# ## como default le deje a dia vencido
+# 
+
+# ## Función para generar correo
+
+# In[ ]:
+
+
+def correo(receivers,proceso):
+    
+    sql = f""" SELECT usuario, id_ejecucion, id_modelo
+           FROM credit_audit.ejecucion_dinamica;
+                   """
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    df = wr.redshift.read_sql_query(sql,conn)
+
+    # Lista de destinatarios
+    usuario= df['usuario'][0]
+    # id_ejecucion
+    id_ejecucion= df['id_ejecucion'][0]
+    # id_modelo
+    id_modelo= df['id_modelo'][0]
+    
+    #Generar fecha y hora en la que termino la ejecución del modelo
+    formatted_time=timestamp()
+    
+    fecha_actual,mes_actual=fecha()
+    
+    ### Enviar correo
+    remitente= 'tplaybot252@gmail.com'
+    password = 'Memo1234tpe23++'
+    
+    if proceso=='inicio':
+
+        # Crear el objeto del mensaje
+        subject="Inicio de ejecución del modelo de asignación de linea de crédito"
+        mensaje = f"""Estimados usuarios.
+        Se notifica que el usuario {usuario} con id {id_ejecucion} inicio la ejecución del modelo de asignación de linea de crédito con
+        el id del modelo {id_modelo} el {formatted_time}."""
+        
+    if proceso=='termino':
+        
+        # Crear el objeto del mensaje
+        subject="Termino de ejecución del modelo de asignación de linea de crédito"
+        mensaje = f"""Estimados usuarios.
+        Se notifica que el {usuario} con id {id_ejecucion} ejecuto el modelo de asignación de linea de crédito con
+        el id del modelo {id_modelo} el {formatted_time}."""
+        
+    if proceso=='bases1':
+        
+        # Crear el objeto del mensaje
+        subject="Falla en la ejecución del modelo de asignación de linea de crédito"
+        mensaje = f"""Estimados usuarios.
+        Se notifica que no se ejecuto el modelo con id de ejecución {id_ejecucion} e id del modelo {id_modelo}
+        debido a que no se encuentra con información al día {fecha_actual} en al menos una de las siguientes bases:
+        1-.data_lake.dev_ae_gestion
+        2-.data_lake.dev_arpu_3
+        3-.data_lake.dev_veces_mora_4
+        4-.data_lake.dev_veces_mora_6meses_4
+        5-.data_lake.dev_contracargos"""
+        
+    if proceso=='bases2':
+        
+        # Crear el objeto del mensaje
+        subject="Falla en la ejecución del modelo de asignación de linea de crédito"
+        mensaje = f"""Estimados usuarios.
+        Se notifica que no se ejecuto el modelo con id de ejecución {id_ejecucion} e id del modelo {id_modelo}
+        debido a que no se encuentra con información al día {fecha_actual} en al menos una de las siguientes bases:
+        1-.data_staging.ta_slf_cuentafactura__c
+        2-.data_lake.tp_reportes_pagos_brm
+        3-.black_box.cartera
+        4-.data_staging.slf_grupocodificacion__c
+        5-.data_staging.ta_slf_case
+        6-.data_lake.funnel_adopcion_extract
+        7-.credito_ext.funnel_adopcion"""
+
+    enviar_correos(remitente, password, receivers,subject ,mensaje)
+
+
+# ## Ejecución del modelo
+
+# In[ ]:
+
+
+id=val_existencia_modelo()
+
+# Lista de destinatarios
+receivers=['juan.resendis@totalplay.com.mx','alexander.ayala@totalplay.com.mx','itzel.islas@totalplay.com.mx']
+
+def tiempo():
+    query = f"""select *
+            from credit_audit.historico_ejecucion
+            where fecha_ejecucion = (select max(fecha_ejecucion) from credit_audit.historico_ejecucion)
+            ;"""
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    df = wr.redshift.read_sql_query(query, conn)
+    fecha=df['info_day'][0]
+    three_month_ago=fecha - relativedelta(months=3)
+    current_date=fecha - relativedelta(days=(1))
+    current_date = current_date.strftime("'%Y-%m-%d %H:%M:%S'")
+    three_month_ago = three_month_ago.strftime("'%Y-%m-%d %H:%M:%S'")
+    fecha_actual= fecha.strftime("%Y%m%d")
+    mes_actual= fecha.strftime("%Y%m")
+    infoday = fecha.strftime('%Y-%m-%d')
+    fecha_actual = int(fecha_actual)
+    mes_actual = int(mes_actual)
+    id_ejecucion=df['id_ejecucion'][0]
+    id_modelo=df['id_modelo'][0]
+    usuario=df['usuario'][0]
+    return(fecha_actual,mes_actual,current_date,three_month_ago,id_ejecucion,id_modelo, usuario)
+
+
+fecha_actual, mes_actual,current_date,three_month_ago, id_ejecucion, id_modelo, usuario=tiempo()
+info_day=fecha_actual
+info_day
+
+if id.empty:
+    query = f"""INSERT INTO credit_audit.watch_models (
+                 id_ejecucion,
+                 id_modelo,
+                 usuario,
+                 nombre_modelo,
+                 porcentaje_carga,
+                 estatus_ejecucion,
+                 fecha_inicio,
+                 info_day
+              )
+              VALUES (
+                 {id_ejecucion},
+                 '{id_modelo}',
+                 '{usuario}',
+                 'actualizacion_variables',
+                 0,
+                 'En proceso',
+                 CURRENT_TIMESTAMP - INTERVAL '6 hours',
+                 {fecha_actual}
+              );"""
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        cursor.execute("commit;")
+    conn.close()
+
+    update_base(credit_audit.ejecucion_dinamica)
+
+    query = f"""UPDATE credit_audit.watch_models 
+                  SET porcentaje_carga = 100,
+                      estatus_ejecucion ='termino',
+                      fecha_fin = CURRENT_TIMESTAMP - INTERVAL '6 hours'
+                  WHERE nombre_modelo= 'actualizacion_variables'
+                  and info_day ={fecha_actual}
+                  and id_ejecucion={id_ejecucion};
+                  """
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        cursor.execute("commit;")
+    conn.close()
+
+    correo(receivers,'inicio')
+
+    query = f"""INSERT INTO credit_audit.watch_models (
+                 id_ejecucion,
+                 id_modelo,
+                 usuario,
+                 nombre_modelo,
+                 porcentaje_carga,
+                 estatus_ejecucion,
+                 fecha_inicio,
+                 info_day
+              )
+              VALUES (
+                 {id_ejecucion},
+                 '{id_modelo}',
+                 '{usuario}',
+                 'actializacion_predeterminada',
+                 0,
+                 'En proceso',
+                 CURRENT_TIMESTAMP - INTERVAL '6 hours',
+                 {fecha_actual}
+              );"""
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        cursor.execute("commit;")
+    conn.close()
+
+    update_base(credit_audit.ejecucion_predeterminada)
+
+    query = f"""UPDATE credit_audit.watch_models 
+                  SET porcentaje_carga = 100,
+                      estatus_ejecucion ='termino',
+                      fecha_fin = CURRENT_TIMESTAMP - INTERVAL '6 hours'
+                  WHERE nombre_modelo= 'actualizacion_predeterminada'
+                  and info_day ={fecha_actual}
+                  and id_ejecucion={id_ejecucion};
+                  """
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        cursor.execute("commit;")
+    conn.close()
+
+    query = f"""INSERT INTO credit_audit.watch_models (
+                 id_ejecucion,
+                 id_modelo,
+                 usuario,
+                 nombre_modelo,
+                 porcentaje_carga,
+                 estatus_ejecucion,
+                 fecha_inicio,
+                 info_day
+              )
+              VALUES (
+                 {id_ejecucion},
+                 '{id_modelo}',
+                 '{usuario}',
+                 'control_insumos',
+                 0,
+                 'En proceso',
+                 CURRENT_TIMESTAMP - INTERVAL '6 hours',
+                 {fecha_actual}
+              );"""
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        cursor.execute("commit;")
+    conn.close()
+
+    control_insumos()
+
+    query = f"""UPDATE credit_audit.watch_models 
+                  SET porcentaje_carga = 100,
+                      estatus_ejecucion ='termino',
+                      fecha_fin = CURRENT_TIMESTAMP - INTERVAL '6 hours'
+                  WHERE nombre_modelo= 'control_insumos'
+                  and info_day ={fecha_actual}
+                  and id_ejecucion={id_ejecucion};
+                  """
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        cursor.execute("commit;")
+    conn.close()
+
+    df1=muestra("data_lake.dev_ae_gestion")
+    df2=muestra("data_lake.dev_arpu_3")
+    df3=muestra("data_lake.dev_veces_mora_4")
+    df4=muestra("data_lake.dev_veces_mora_6meses_4")
+    df5=muestra("data_lake.dev_contracargos")
+    ultima_fila= control_insumos()
+    if ultima_fila.eq('Correcto').all():
+        if df1.empty:
+            print("**********************Atención especial**********************")
+            # Define la línea de código que deseas ejecutar en la terminal
+            comando = "bash  /opt/sas/SASHomeCompute/SASFoundation/9.4/code_m/asignacion_lc/atencion_especial.sh"
+            ejecucion_sh(comando)
+        if df2.empty:
+            print("**********************dev_arpu_3**********************")
+            # Define la línea de código que deseas ejecutar en la terminal
+            comando = "bash  /opt/sas/SASHomeCompute/SASFoundation/9.4/code_m/asignacion_lc/dev_arpu_3.sh"
+            ejecucion_sh(comando)
+        if df3.empty:
+            print("**********************dev_veces_mora_4**********************")
+            # Define la línea de código que deseas ejecutar en la terminal
+            comando = "bash  /opt/sas/SASHomeCompute/SASFoundation/9.4/code_m/asignacion_lc/dev_veces_mora_4.sh"
+            ejecucion_sh(comando)
+        if df4.empty:
+            print("**********************dev_veces_mora6meses_4**********************")
+            # Define la línea de código que deseas ejecutar en la terminal
+            comando = "bash  /opt/sas/SASHomeCompute/SASFoundation/9.4/code_m/asignacion_lc/dev_veces_mora6meses_4.sh"
+            ejecucion_sh(comando)
+        if df5.empty:
+            print("**********************dev_contracargos**********************")
+            # Define la línea de código que deseas ejecutar en la terminal
+            #comando = "bash  "
+            #ejecucion_modelo(comando)
+        if not df1.empty and not df2.empty and not df3.empty and not df4.empty and not df5.empty:
+            ejecucion_modelo()
+            correo(receivers,'termino')
+        else:
+            correo(receivers,'bases1')
+    else:
+        correo(receivers,'bases2')
+else:
+    
+    query = f"""INSERT INTO credit_audit.watch_models (
+                 id_ejecucion,
+                 id_modelo,
+                 usuario,
+                 nombre_modelo,
+                 porcentaje_carga,
+                 estatus_ejecucion,
+                 fecha_inicio,
+                 info_day
+              )
+              VALUES (
+                 {id_ejecucion},
+                 '{id_modelo}',
+                 '{usuario}',
+                 'añadir_modelo',
+                 0,
+                 'En proceso',
+                 CURRENT_TIMESTAMP - INTERVAL '6 hours',
+                 {fecha_actual}
+              );"""
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        cursor.execute("commit;")
+    conn.close()
+    
+    anadir_modelo()
+    
+    query = f"""UPDATE credit_audit.watch_models 
+                  SET porcentaje_carga = 100,
+                      estatus_ejecucion ='termino',
+                      fecha_fin = CURRENT_TIMESTAMP - INTERVAL '6 hours'
+                  WHERE nombre_modelo= 'añadir_modelo'
+                  and info_day ={fecha_actual}
+                  and id_ejecucion={id_ejecucion};
+                  """
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        cursor.execute("commit;")
+    conn.close()
+    
+    query = f"""INSERT INTO credit_audit.watch_models (
+             id_ejecucion,
+             id_modelo,
+             usuario,
+             nombre_modelo,
+             porcentaje_carga,
+             estatus_ejecucion,
+             fecha_inicio,
+             info_day
+          )
+          VALUES (
+             {id_ejecucion},
+             '{id_modelo}',
+             '{usuario}',
+             'actualizacion_variables',
+             0,
+             'En proceso',
+             CURRENT_TIMESTAMP - INTERVAL '6 hours',
+             {fecha_actual}
+          );"""
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        cursor.execute("commit;")
+    conn.close()
+
+    update_base(credit_audit.ejecucion_dinamica)
+
+    query = f"""UPDATE credit_audit.watch_models 
+                  SET porcentaje_carga = 100,
+                      estatus_ejecucion ='termino',
+                      fecha_fin = CURRENT_TIMESTAMP - INTERVAL '6 hours'
+                  WHERE nombre_modelo= 'actualizacion_variables'
+                  and info_day ={fecha_actual}
+                  and id_ejecucion={id_ejecucion};
+                  """
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        cursor.execute("commit;")
+    conn.close()
+
+    correo(receivers,'inicio')
+
+    query = f"""INSERT INTO credit_audit.watch_models (
+                 id_ejecucion,
+                 id_modelo,
+                 usuario,
+                 nombre_modelo,
+                 porcentaje_carga,
+                 estatus_ejecucion,
+                 fecha_inicio,
+                 info_day
+              )
+              VALUES (
+                 {id_ejecucion},
+                 '{id_modelo}',
+                 '{usuario}',
+                 'actializacion_predeterminada',
+                 0,
+                 'En proceso',
+                 CURRENT_TIMESTAMP - INTERVAL '6 hours',
+                 {fecha_actual}
+              );"""
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        cursor.execute("commit;")
+    conn.close()
+
+    update_base(credit_audit.ejecucion_predeterminada)
+
+    query = f"""UPDATE credit_audit.watch_models 
+                  SET porcentaje_carga = 100,
+                      estatus_ejecucion ='termino',
+                      fecha_fin = CURRENT_TIMESTAMP - INTERVAL '6 hours'
+                  WHERE nombre_modelo= 'actualizacion_predeterminada'
+                  and info_day ={fecha_actual}
+                  and id_ejecucion={id_ejecucion};
+                  """
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        cursor.execute("commit;")
+    conn.close()
+
+    query = f"""INSERT INTO credit_audit.watch_models (
+                 id_ejecucion,
+                 id_modelo,
+                 usuario,
+                 nombre_modelo,
+                 porcentaje_carga,
+                 estatus_ejecucion,
+                 fecha_inicio,
+                 info_day
+              )
+              VALUES (
+                 {id_ejecucion},
+                 '{id_modelo}',
+                 '{usuario}',
+                 'control_insumos',
+                 0,
+                 'En proceso',
+                 CURRENT_TIMESTAMP - INTERVAL '6 hours',
+                 {fecha_actual}
+              );"""
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        cursor.execute("commit;")
+    conn.close()
+
+    control_insumos()
+
+    query = f"""UPDATE credit_audit.watch_models 
+                  SET porcentaje_carga = 100,
+                      estatus_ejecucion ='termino',
+                      fecha_fin = CURRENT_TIMESTAMP - INTERVAL '6 hours'
+                  WHERE nombre_modelo= 'control_insumos'
+                  and info_day ={fecha_actual}
+                  and id_ejecucion={id_ejecucion};
+                  """
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        cursor.execute("commit;")
+    conn.close()
+
+    df1=muestra("data_lake.dev_ae_gestion")
+    df2=muestra("data_lake.dev_arpu_3")
+    df3=muestra("data_lake.dev_veces_mora_4")
+    df4=muestra("data_lake.dev_veces_mora_6meses_4")
+    df5=muestra("data_lake.dev_contracargos")
+    ultima_fila= control_insumos()
+    if ultima_fila.eq('Correcto').all():
+        if df1.empty:
+            print("**********************Atención especial**********************")
+            # Define la línea de código que deseas ejecutar en la terminal
+            comando = "bash  /opt/sas/SASHomeCompute/SASFoundation/9.4/code_m/asignacion_lc/atencion_especial.sh"
+            ejecucion_sh(comando)
+        if df2.empty:
+            print("**********************dev_arpu_3**********************")
+            # Define la línea de código que deseas ejecutar en la terminal
+            comando = "bash  /opt/sas/SASHomeCompute/SASFoundation/9.4/code_m/asignacion_lc/dev_arpu_3.sh"
+            ejecucion_sh(comando)
+        if df3.empty:
+            print("**********************dev_veces_mora_4**********************")
+            # Define la línea de código que deseas ejecutar en la terminal
+            comando = "bash  /opt/sas/SASHomeCompute/SASFoundation/9.4/code_m/asignacion_lc/dev_veces_mora_4.sh"
+            ejecucion_sh(comando)
+        if df4.empty:
+            print("**********************dev_veces_mora6meses_4**********************")
+            # Define la línea de código que deseas ejecutar en la terminal
+            comando = "bash  /opt/sas/SASHomeCompute/SASFoundation/9.4/code_m/asignacion_lc/dev_veces_mora6meses_4.sh"
+            ejecucion_sh(comando)
+        if df5.empty:
+            print("**********************dev_contracargos**********************")
+            # Define la línea de código que deseas ejecutar en la terminal
+            #comando = "bash  "
+            #ejecucion_modelo(comando)
+        if not df1.empty and not df2.empty and not df3.empty and not df4.empty and not df5.empty:
+            ejecucion_modelo()
+            correo(receivers,'termino')
+        else:
+            correo(receivers,'bases1')
+    else:
+        correo(receivers,'bases2')
+
