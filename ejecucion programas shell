@@ -1,0 +1,139 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # ejecucion programas shell
+
+# ## Importar librerias
+
+# In[2]:
+
+
+import os
+import numpy as np
+import requests
+import xmltodict
+import csv
+import pandas as pd
+import json
+import time
+import pandas as pd
+from requests.exceptions import ConnectionError
+import awswrangler as wr
+import boto3
+import re
+import calendar
+import datetime
+from datetime import datetime
+from datetime import date
+import pytz
+from datetime import timedelta
+from dateutil.relativedelta import relativedelta
+import subprocess
+from email.message import EmailMessage
+import smtplib
+from botocore.exceptions import NoCredentialsError
+import random
+import string
+
+
+# ## Obtener fecha para el info_day
+
+# In[4]:
+
+
+# Set the time zone to Mexico City
+mexico_timezone = pytz.timezone('America/Mexico_City')
+
+# Get the current datetime in Mexico City
+carpeta = datetime.now(mexico_timezone)
+
+# Extract the date
+pv = carpeta.date()- relativedelta(days=1)
+oya=pv - relativedelta(months=12)
+
+pv = datetime.combine(pv, datetime.min.time())
+oya = datetime.combine(oya, datetime.min.time())
+# Format the current day's date as "20230717"
+pv = pv.strftime("%Y%m%d")
+oya = oya.strftime("%Y%m%d")
+
+# Print the previous day's date in the desired format
+print("día vencido para info_day de data_lake.tp_reportes_pagos_brm",pv)
+# Print the previous day's date in the desired format
+print("un año atras del día vencido para info_day de data_lake.tp_reportes_pagos_brm",oya)
+
+
+# ## Funcion que se trae una muestra de las bases
+
+# In[8]:
+
+
+def muestra(base):
+    sql2 = f""" SELECT *
+            FROM {base}
+            WHERE partition_0= '{pv}'
+            limit 100;
+        """
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    df2 = wr.redshift.read_sql_query(sql2,conn)
+    return(df2)
+
+
+# ## Función para ejecutar los programas shell
+
+# In[ ]:
+
+
+def ejecucion_sh(comando):
+    # Ejecuta el comando en la terminal y captura la salida
+    resultado = subprocess.run(comando, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+
+    # Imprime la salida del comando
+    print("Salida del comando:")
+    print(resultado.stdout)
+
+    # Imprime la salida de error, si hay
+    if resultado.stderr:
+        print("Error del comando:")
+        print(resultado.stderr)
+
+
+# ## Ejecución de las bases
+
+# In[ ]:
+
+
+df1=muestra("data_lake.dev_ae_gestion")
+df2=muestra("data_lake.dev_arpu_3")
+df3=muestra("data_lake.dev_veces_mora_4")
+df4=muestra("data_lake.dev_veces_mora_6meses_4")
+if df1.empty:
+    print("**********************Atención especial**********************")
+    # Define la línea de código que deseas ejecutar en la terminal
+    comando = "bash  /opt/sas/SASHomeCompute/SASFoundation/9.4/code_m/asignacion_lc/atencion_especial.sh"
+    ejecucion_sh(comando)
+if df2.empty:
+    print("**********************dev_arpu_3**********************")
+    # Define la línea de código que deseas ejecutar en la terminal
+    comando = "bash  /opt/sas/SASHomeCompute/SASFoundation/9.4/code_m/asignacion_lc/dev_arpu_3.sh"
+    ejecucion_sh(comando)
+if df3.empty:
+    print("**********************dev_veces_mora_4**********************")
+    # Define la línea de código que deseas ejecutar en la terminal
+    comando = "bash  /opt/sas/SASHomeCompute/SASFoundation/9.4/code_m/asignacion_lc/dev_veces_mora_4.sh"
+    ejecucion_sh(comando)
+if df4.empty:
+    print("**********************dev_veces_mora6meses_4**********************")
+    # Define la línea de código que deseas ejecutar en la terminal
+    comando = "bash  /opt/sas/SASHomeCompute/SASFoundation/9.4/code_m/asignacion_lc/dev_veces_mora6meses_4.sh"
+    ejecucion_sh(comando)
+
+        
+
+
+# In[ ]:
+
+
+
+
