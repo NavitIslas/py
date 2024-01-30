@@ -1,0 +1,178 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Cifras Adopcion digital
+
+# ## Importar librerias
+
+# In[16]:
+
+
+import numpy as np
+from datetime import datetime
+import awswrangler as wr
+import pandas as pd
+import calendar
+import datetime
+from datetime import datetime
+from datetime import date
+import pytz
+from datetime import timedelta
+from dateutil.relativedelta import relativedelta
+import boto3
+from botocore.exceptions import ClientError
+from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE
+from pptx.util import Inches
+import plotly.express as px
+import pandas as pd
+from pandas_profiling import ProfileReport
+import warnings
+warnings.filterwarnings('ignore')
+from email.message import EmailMessage
+import smtplib
+from botocore.exceptions import NoCredentialsError
+
+
+# ## Obtener la fecha del día vencido en el formato 20230910
+
+# In[2]:
+
+
+# Set the time zone to Mexico City
+mexico_timezone = pytz.timezone('America/Mexico_City')
+
+# Get the current datetime in Mexico City
+current_datetime = datetime.now(mexico_timezone)
+
+# Extract the date
+current_date = current_datetime.date()
+previous_date=current_datetime.date() - relativedelta(days=1)
+#Convert the datetime object back to a formatted string
+previous_date= previous_date.strftime("%Y%m%d")
+
+# Corvert the datetimes to a formated int 
+previous_date = int(previous_date)
+
+# Print the result in a formatted way
+print("día vencido:",previous_date )
+
+
+# ## Función que saca las cuentas que solo tienen facescan
+
+# In[6]:
+
+
+def solo_facescan(previous_date):
+    query = f"""select count(*)
+                from data_lake.funnel_adopcion_extract
+                where info_day={previous_date}
+                      and facescan=1
+                      and identificacion!=1;
+    """
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    df1 = wr.redshift.read_sql_query(query,conn)
+    return(df1['count'][0])
+
+
+# ## Función que saca las cuentas que solo tienen facescan e identificación
+
+# In[10]:
+
+
+def facescan_ine(previous_date):
+    query = f"""select count(*)
+                from data_lake.funnel_adopcion_extract
+                where info_day={previous_date}
+                      and facescan=1
+                      and identificacion=1
+                      and numero_de_cuenta not in (select numero_de_cuenta
+                                          from data_lake.funnel_adopcion_extract
+                                          where info_day={previous_date}
+                                                and facescan=1
+                                                and identificacion!=1);
+    """
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    df2 = wr.redshift.read_sql_query(query,conn)
+    return(df2['count'][0])
+
+
+# ## Función que saca las cuentas que tienen facescan !=0 e identificación= 1
+
+# In[12]:
+
+
+def solo_ine(previous_date):
+    query = f"""select count(*)
+                from data_lake.funnel_adopcion_extract
+                where info_day={previous_date}
+                      and facescan!=1
+                      and identificacion=1
+                      and numero_de_cuenta not in (select numero_de_cuenta
+                                                    from data_lake.funnel_adopcion_extract
+                                                    where info_day={previous_date}
+                                                          and facescan=1
+                                                          and identificacion=1
+                                                          and numero_de_cuenta not in (select numero_de_cuenta
+                                                                              from data_lake.funnel_adopcion_extract
+                                                                              where info_day={previous_date}
+                                                                                    and facescan=1
+                                                                                    and identificacion!=1));
+    """
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    df3 = wr.redshift.read_sql_query(query,conn)
+    return(df3['count'][0])
+
+
+# ## Enviar correo
+
+# In[14]:
+
+
+def enviar_correos(remitente, password, receivers,subject ,mensaje):
+    email = EmailMessage()
+    email["From"] = remitente
+    email["to"] = receivers
+    email["Subject"] = f'{subject}'
+    email.set_content(mensaje)
+
+    listas_correos = ', '.join(receivers)
+    smtp = smtplib.SMTP_SSL('smtp.gmail.com')
+
+    password = "csvj ukly dulz lutm".encode('ascii', 'ignore').decode('ascii')
+    smtp.login(remitente,password)
+    # tener el log (235, b'2.7.0 Accepted')
+
+    smtp.sendmail(remitente,receivers,email.as_string())
+    smtp.quit()
+
+
+# ## Ejecutar proceso
+
+# In[17]:
+
+
+df1=solo_facescan(previous_date)
+df2=facescan_ine(previous_date)
+df3=solo_ine(previous_date)
+### Enviar correo
+remitente= 'tplaybot252@gmail.com'
+password = 'Memo1234tpe23++'
+
+# Lista de destinatarios
+receivers=['juan.resendis@totalplay.com.mx','alexander.ayala@totalplay.com.mx','itzel.islas@totalplay.com.mx']
+
+
+# Crear el objeto del mensaje
+subject="Cifras Adopción digital"
+mensaje = f"""Estimado usuario.
+A continuación les compartimos las cifras de adopción digital al día {previous_date}.
+Solo facescan= {df1}
+Facescan e identificación= {df2+df3}
+"""
+
+enviar_correos(remitente, password, receivers,subject ,mensaje)
+
