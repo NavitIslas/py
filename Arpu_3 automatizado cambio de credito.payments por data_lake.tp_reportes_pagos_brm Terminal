@@ -1,0 +1,369 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Arpu_3 automatizado Terminal
+
+# ## Importar librerias
+
+# In[13]:
+
+
+import numpy as np
+from datetime import datetime
+import awswrangler as wr
+import pandas as pd
+import calendar
+import datetime
+from datetime import datetime
+from datetime import date
+import pytz
+from datetime import timedelta
+from dateutil.relativedelta import relativedelta
+import boto3
+from botocore.exceptions import ClientError
+import warnings
+import psycopg2
+import os
+from email.message import EmailMessage
+import smtplib
+from botocore.exceptions import NoCredentialsError
+
+
+# ## Código para ignorar warnings
+
+# In[ ]:
+
+
+warnings.simplefilter('ignore')
+
+
+# ## Conexion a redshift
+
+# In[ ]:
+
+
+boto3.setup_default_session(region_name="us-east-1")
+conn = wr.redshift.connect("redshift_devsie")
+
+
+# ## Variables para la creación de las tablas
+
+# ### Días a restar
+
+# In[14]:
+
+
+dias=1
+
+
+# ### Obtener fecha a día vencido para filtrar la fecha de la tabla
+
+# In[15]:
+
+
+# Set the time zone to Mexico City
+mexico_timezone = pytz.timezone('America/Mexico_City')
+
+# Get the current datetime in Mexico City
+current_datetime = datetime.now(mexico_timezone)
+
+# Extract the date
+current_date = current_datetime.date()
+current_date=current_datetime.date() - relativedelta(days=dias)
+one_year_ago=current_date - relativedelta(months=12)
+
+current_date = datetime.combine(current_date, datetime.min.time())
+one_year_ago = datetime.combine(one_year_ago, datetime.min.time())
+
+
+# Convert the datetime object back to a formatted string
+current_date = current_date.strftime("'%Y-%m-%d %H:%M:%S'")
+one_year_ago = one_year_ago.strftime("'%Y-%m-%d %H:%M:%S'")
+
+# Print the result in a formatted way
+print("Día vencido:",current_date )
+print("Un año atras del día vencido", one_year_ago)
+
+
+# ### Obtener fecha para el nombre de la carpeta
+
+# In[16]:
+
+
+# Set the time zone to Mexico City
+mexico_timezone = pytz.timezone('America/Mexico_City')
+
+# Get the current datetime in Mexico City
+carpeta = datetime.now(mexico_timezone)
+
+# Extract the date
+carpeta = carpeta.date()- relativedelta(days=dias)
+
+carpeta = datetime.combine(carpeta, datetime.min.time())
+# Format the current day's date as "20230717"
+carpeta = carpeta.strftime("%Y%m%d")
+carpeta=int(carpeta)
+
+# Print the previous day's date in the desired format
+print("Se creara la siguiente carpeta en S3",carpeta)
+
+
+# ### Obtener fecha para el info_day
+
+# In[17]:
+
+
+# Set the time zone to Mexico City
+mexico_timezone = pytz.timezone('America/Mexico_City')
+
+# Get the current datetime in Mexico City
+carpeta = datetime.now(mexico_timezone)
+
+# Extract the date
+pv = carpeta.date()- relativedelta(days=dias)
+oya=pv - relativedelta(months=12)
+
+pv = datetime.combine(pv, datetime.min.time())
+oya = datetime.combine(oya, datetime.min.time())
+# Format the current day's date as "20230717"
+pv = pv.strftime("%Y%m%d")
+oya = oya.strftime("%Y%m%d")
+
+# Print the previous day's date in the desired format
+print("día vencido para info_day de data_lake.tp_reportes_pagos_brm",pv)
+# Print the previous day's date in the desired format
+print("un año atras del día vencido para info_day de data_lake.tp_reportes_pagos_brm",oya)
+
+
+# ## Validar si en las base data_lake.tp_reportes_pagos_brm hay información a día vencido
+
+# In[ ]:
+
+
+sql1 = f""" SELECT cuenta,fecha
+            FROM data_lake.tp_reportes_pagos_brm 
+            WHERE info_day= {pv}
+            limit 100;
+               """
+boto3.setup_default_session(region_name="us-east-1")
+conn = wr.redshift.connect("redshift_devsie")
+df1 = wr.redshift.read_sql_query(sql1,conn)
+
+
+# ## Validar si en las base data_lake.tp_reportes_pagos_brm hay información de hace un año
+
+# In[ ]:
+
+
+sql2 = f""" SELECT cuenta,fecha
+            FROM data_lake.tp_reportes_pagos_brm 
+            WHERE info_day= {oya}
+            limit 100;
+        """
+boto3.setup_default_session(region_name="us-east-1")
+conn = wr.redshift.connect("redshift_devsie")
+df2 = wr.redshift.read_sql_query(sql2,conn)
+
+
+# ## Validar si existe la carpeta en S3
+
+# In[48]:
+
+
+s3_client = boto3.client('s3', region_name='us-east-1')
+def check_s3_folder(bucket_name, folder_name):
+    """
+    Verifica si una carpeta (prefijo) existe en un bucket de S3.
+
+    :param bucket_name: Nombre del bucket de S3.
+    :param folder_name: Nombre de la carpeta (prefijo) que se desea verificar.
+    :return: True si la carpeta existe, False en caso contrario.
+    """
+    s3 = boto3.client('s3')
+
+    try:
+        # Listamos los objetos en el bucket con el prefijo dado
+        response = s3.list_objects_v2(Bucket=bucket_name, Prefix=folder_name)
+
+        # Si hay algún objeto con el prefijo, entonces la carpeta existe
+        return 'Contents' in response
+    except NoCredentialsError:
+        print("Las credenciales de AWS no están disponibles.")
+        return False
+
+
+# In[49]:
+
+
+bucket_name = 'desarrollos-bigdata-inovacion-us-east-1'
+folder_name = f'SAS/sas94/dev_arpu_3/{pv}'
+
+
+# ## Enviar correo
+
+# In[ ]:
+
+
+def enviar_correos(remitente, password, receivers,subject ,mensaje):
+    email = EmailMessage()
+    email["From"] = remitente
+    email["to"] = receivers
+    email["Subject"] = f'{subject}'
+    email.set_content(mensaje)
+
+    listas_correos = ', '.join(receivers)
+    smtp = smtplib.SMTP_SSL('smtp.gmail.com')
+
+    password = "csvj ukly dulz lutm".encode('ascii', 'ignore').decode('ascii')
+    smtp.login(remitente,password)
+    # tener el log (235, b'2.7.0 Accepted')
+
+    smtp.sendmail(remitente,receivers,email.as_string())
+    smtp.quit()
+
+
+# ## Creación de la tabla dev_arpu en S3
+
+# In[ ]:
+
+
+if not df1.empty:
+    if not df2.empty:
+        if not check_s3_folder(bucket_name, folder_name):
+            sql = f"""UNLOAD ($$ 
+                                select cuenta,avg,
+                                        case when avg between -20 and 20 then '0'
+                                             when avg < -20 then '<0'
+                                             when avg > 20 then '>0' 
+                                             when avg is null then '0' end as arpu
+                                from (select cuenta,avg(diferencias)
+                                      from (SELECT a.cuenta,
+                                                   a.monto-lag(a.monto) OVER (PARTITION BY a.cuenta ORDER BY a.fecha ASC) AS diferencias
+                                            FROM data_lake.tp_reportes_pagos_brm a 
+                                    RIGHT JOIN (
+                                              SELECT
+                                                     cuenta,
+                                                     idclienteunico,
+                                                     fechaactivacion,
+                                                     regiondsc,
+                                                     clusterdsc,
+                                                     nse,
+                                                     estatuscuenta,
+                                                     negocio,
+                                                     edad_e,
+                                                     behaviorscore_brm,
+                                                     creditscore_sas as score,
+                                                     estado,
+                                                     medio_pago_favorito,
+                                                     pago_domiciliado
+                                              FROM data_lake.vista_unica_cuenta
+                                              WHERE info_day IN (SELECT MAX(info_day) 
+                                                                 FROM data_lake.vista_unica_cuenta)
+                                                   AND negocio IN ('RESIDENCIAL_FISICA_ACT_EMP','RESIDENCIAL_FISICA')
+                                              ) b ON a.cuenta=b.cuenta
+                                WHERE a.fecha >= {one_year_ago} AND  a.fecha < {current_date}
+                                      and a.info_day >= {oya} and a.info_day <= {pv}
+                                ORDER BY  a.cuenta
+                                 )
+                                group by cuenta
+                                 )
+                $$)
+                TO 's3://desarrollos-bigdata-inovacion-us-east-1/SAS/sas94/dev_arpu_3/{pv}/arpu_{pv}'
+                IAM_ROLE 'arn:aws:iam::903746939682:role/ReadTP'
+                PARALLEL OFF
+                FORMAT PARQUET
+               """
+            boto3.setup_default_session(region_name="us-east-1")
+            conn = wr.redshift.connect("redshift_devsie")
+
+            with conn.cursor() as cursor:
+                 cursor.execute(sql)
+                 cursor.execute("commit;")
+
+            conn.close()
+            
+            ### Enviar correo
+            remitente= 'tplaybot252@gmail.com'
+            password = 'Memo1234tpe23++'
+
+            # Lista de destinatarios
+            receivers=['juan.resendis@totalplay.com.mx','alexander.ayala@totalplay.com.mx','itzel.islas@totalplay.com.mx']
+
+
+            # Crear el objeto del mensaje
+            subject="dev_arpu_3"
+            mensaje = f"""Estimado usuario.
+            Se actualizo correctamente la tabla dev_arpu_3 con información al {pv}."""
+            
+            enviar_correos(remitente, password, receivers,subject ,mensaje)
+        else:
+            print("Ya existe la carpeta en S3.")
+            ### Enviar correo
+            remitente= 'tplaybot252@gmail.com'
+            password = 'Memo1234tpe23++'
+
+            # Lista de destinatarios
+            receivers=['juan.resendis@totalplay.com.mx','alexander.ayala@totalplay.com.mx','itzel.islas@totalplay.com.mx']
+
+
+            # Crear el objeto del mensaje
+            subject="dev_arpu_3"
+            mensaje = f"""Estimado usuario.
+            No se actualizo correctamente la tabla dev_arpu_3 con información al {pv}, ya que ya 
+            existe la carpeta en S3."""
+
+            enviar_correos(remitente, password, receivers,subject ,mensaje)
+
+    else:
+        print("No hay información en la base data_lake.tp_reportes_pagos_brm para el día",oya)
+        ### Enviar correo
+        remitente= 'tplaybot252@gmail.com'
+        password = 'Memo1234tpe23++'
+
+        # Lista de destinatarios
+        receivers=['juan.resendis@totalplay.com.mx','alexander.ayala@totalplay.com.mx','itzel.islas@totalplay.com.mx']
+
+
+        # Crear el objeto del mensaje
+        subject="dev_arpu_3"
+        mensaje = f"""Estimado usuario.
+        No se actualizo correctamente la tabla dev_arpu_3 con información al {pv}, ya que no hay 
+        información en la base data_lake.tp_reportes_pagos_brm al {oya}."""
+
+        enviar_correos(remitente, password, receivers,subject ,mensaje)
+else:
+    print("No hay información en la base data_lake.tp_reportes_pagos_brm para el día",{pv})
+    ### Enviar correo
+    remitente= 'tplaybot252@gmail.com'
+    password = 'Memo1234tpe23++'
+
+    # Lista de destinatarios
+    receivers=['juan.resendis@totalplay.com.mx','alexander.ayala@totalplay.com.mx','itzel.islas@totalplay.com.mx']
+
+
+    # Crear el objeto del mensaje
+    subject="dev_arpu_3"
+    mensaje = f"""Estimado usuario.
+    No se actualizo correctamente la tabla dev_arpu_3 con información al {pv}, ya que no hay 
+    información en la base data_lake.tp_reportes_pagos_brm al {pv}."""
+
+    enviar_correos(remitente, password, receivers,subject ,mensaje)
+
+
+# ## Correr Crawler
+
+# In[ ]:
+
+
+# Initialize a Boto3 Glue client
+glue_client = boto3.client('glue', region_name='us-east-1')
+
+# Replace 'your-crawler-name' with the name of your Glue Crawler
+crawler_name = 'dev_arpu_3'
+
+# Start the Glue Crawler
+response = glue_client.start_crawler(Name=crawler_name)
+
+# Print the response or handle it as needed
+print(response)
+
