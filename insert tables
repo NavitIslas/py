@@ -1,0 +1,159 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[1]:
+
+
+import os
+import numpy as np
+import requests
+import xmltodict
+import csv
+import pandas as pd
+import json
+import time
+import pandas as pd
+from requests.exceptions import ConnectionError
+import awswrangler as wr
+import boto3
+import re
+import calendar
+import datetime
+from datetime import datetime
+from datetime import date
+import pytz
+from datetime import timedelta
+from dateutil.relativedelta import relativedelta
+import subprocess
+from email.message import EmailMessage
+import smtplib
+from botocore.exceptions import NoCredentialsError
+
+
+# In[31]:
+
+
+def tiempo():
+    query = f"""select *
+            from credit_audit.historico_ejecucion
+            where fecha_ejecucion = (select max(fecha_ejecucion) from credit_audit.historico_ejecucion)
+            ;"""
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    df = wr.redshift.read_sql_query(query, conn)
+    fecha=df['info_day'][0]
+    three_month_ago=fecha - relativedelta(months=3)
+    current_date=fecha - relativedelta(days=(1))
+    current_date = current_date.strftime("'%Y-%m-%d %H:%M:%S'")
+    three_month_ago = three_month_ago.strftime("'%Y-%m-%d %H:%M:%S'")
+    fecha_actual= fecha.strftime("%Y%m%d")
+    mes_actual= fecha.strftime("%Y%m")
+    infoday = fecha.strftime('%Y-%m-%d')
+    fecha_actual = int(fecha_actual)
+    mes_actual = int(mes_actual)
+    id_ejecucion=df['id_ejecucion'][0]
+    id_modelo=df['id_modelo'][0]
+    usuario=df['usuario'][0]
+    return(fecha_actual,mes_actual,current_date,three_month_ago,id_ejecucion,id_modelo, usuario)
+
+
+fecha_actual, mes_actual,current_date,three_month_ago, id_ejecucion, id_modelo, usuario=tiempo()
+info_day=fecha_actual
+info_day
+
+query = f"""INSERT INTO credit_audit.watch_models (
+             id_ejecucion,
+             id_modelo,
+             usuario,
+             nombre_modelo,
+             porcentaje_carga,
+             estatus_ejecucion,
+             fecha_inicio,
+             info_day
+          )
+          VALUES (
+             {id_ejecucion},
+             '{id_modelo}',
+             '{usuario}',
+             'actualizacion_variables',
+             0,
+             'En proceso',
+             CURRENT_TIMESTAMP - INTERVAL '6 hours',
+             {fecha_actual}
+          );"""
+boto3.setup_default_session(region_name="us-east-1")
+conn = wr.redshift.connect("redshift_devsie")
+with conn.cursor() as cursor:
+    cursor.execute(query)
+    cursor.execute("commit;")
+conn.close()
+
+
+# In[ ]:
+
+
+query = f"""UPDATE credit_audit.watch_models 
+              SET porcentaje_carga = 100,
+                  estatus_ejecucion ='termino',
+                  fecha_fin = CURRENT_TIMESTAMP - INTERVAL '6 hours'
+              WHERE nombre_modelo= 'actualizacion_variables'
+              and info_day ={fecha_actual}
+              and id_ejecucion={id_ejecucion};
+              """
+boto3.setup_default_session(region_name="us-east-1")
+conn = wr.redshift.connect("redshift_devsie")
+with conn.cursor() as cursor:
+    cursor.execute(query)
+    cursor.execute("commit;")
+conn.close()
+
+
+# In[ ]:
+
+
+query = f"""INSERT INTO credit_audit.watch_models (
+             id_ejecucion,
+             id_modelo,
+             usuario,
+             nombre_modelo,
+             porcentaje_carga,
+             estatus_ejecucion,
+             fecha_inicio,
+             info_day
+          )
+          VALUES (
+             {id_ejecucion},
+             '{id_modelo}',
+             '{usuario}',
+             'control_insumos',
+             0,
+             'En proceso',
+             CURRENT_TIMESTAMP - INTERVAL '6 hours',
+             {fecha_actual}
+          );"""
+boto3.setup_default_session(region_name="us-east-1")
+conn = wr.redshift.connect("redshift_devsie")
+with conn.cursor() as cursor:
+    cursor.execute(query)
+    cursor.execute("commit;")
+conn.close()
+
+
+# In[ ]:
+
+
+query = f"""UPDATE credit_audit.watch_models 
+              SET porcentaje_carga = 100,
+                  estatus_ejecucion ='termino',
+                  fecha_fin = CURRENT_TIMESTAMP - INTERVAL '6 hours'
+              WHERE nombre_modelo= 'control_insumos'
+              and info_day ={fecha_actual}
+              and id_ejecucion={id_ejecucion};
+              """
+boto3.setup_default_session(region_name="us-east-1")
+conn = wr.redshift.connect("redshift_devsie")
+with conn.cursor() as cursor:
+    cursor.execute(query)
+    cursor.execute("commit;")
+conn.close()
+
