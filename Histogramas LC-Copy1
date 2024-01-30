@@ -1,0 +1,306 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Histogramas LC
+
+# ## Importar librerias
+
+# In[1]:
+
+
+import numpy as np
+from datetime import datetime
+import awswrangler as wr
+import pandas as pd
+import calendar
+import datetime
+from datetime import datetime
+from datetime import date
+import pytz
+from datetime import timedelta
+from dateutil.relativedelta import relativedelta
+import boto3
+from botocore.exceptions import ClientError
+import plotly.express as px
+import pandas as pd
+from pandas_profiling import ProfileReport
+import warnings
+warnings.filterwarnings('ignore')
+import json
+import pandas as pd 
+import awswrangler as wr
+import boto3
+from botocore.exceptions import NoCredentialsError
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import plotly.express as px
+import numpy as np
+import plotly.graph_objects as go
+from scipy.stats import shapiro
+import scipy.stats as stats
+from pandas_profiling import ProfileReport
+import warnings
+warnings.filterwarnings('ignore')
+
+
+# ## Conexiones a redshift
+
+# In[2]:
+
+
+con_redshift_2 = wr.redshift.connect("redshift_cctp_inovation")# cluster cctp-prod
+conn = wr.redshift.connect("redshift_devsie")#cluster devise
+cursor=conn.cursor()
+
+
+# ## Obtener la fecha del día vencido en el formato 20230910
+
+# In[3]:
+
+
+# Set the time zone to Mexico City
+mexico_timezone = pytz.timezone('America/Mexico_City')
+
+# Get the current datetime in Mexico City
+current_datetime = datetime.now(mexico_timezone)
+
+# Extract the date
+current_date = current_datetime.date()
+previous_date=current_datetime.date() - relativedelta(days=2)
+
+# Convert the datetime object back to a formatted string
+previous_date= previous_date.strftime("%Y%m%d")
+
+
+# Corvert the datetimes to a formated int 
+previous_date = int(previous_date)
+
+
+# Print the result in a formatted way
+print("día vencido:",previous_date )
+
+
+# In[4]:
+
+
+query = f"""create table  public.LCD_O_{previous_date} as ( 
+                            select
+                            a.cuenta,
+                            a.score,
+                            a.estatus_cta,
+                            c.limite_de_credito__c,
+                            case 
+                               when c.cuenta is not null then 'con_oferta' else 'sin_oferta' end as oferta
+                            from(
+                               select
+                                  cuenta,
+                                  score ,
+                                  ciclo ,
+                                  atraso ,
+                                  morosidad,
+                                  estatus_cta
+                               from black_box.cartera
+                               where info_day = {previous_date} and estatus_cta = 'Activo') as a
+                            left join (
+                                select cuenta, limite_de_credito__c
+                                from public.LCD_SASSLF_{previous_date} where
+                                estatus__c = 'true' and proveedor__c = 'FISERV') as c
+                            on a.cuenta = c.cuenta
+                            group by 
+                                a.cuenta,
+                                a.score,
+                                a.estatus_cta,
+                                c.limite_de_credito__c,
+                                oferta
+                            );"""
+
+conn = wr.redshift.connect("redshift_devsie")
+
+with conn.cursor() as cursor:
+     cursor.execute(query)
+     cursor.execute("commit;")
+
+conn.close()
+
+
+# ## Cuentas con oferta
+
+# In[5]:
+
+
+## Historico de cuentas en data_lake.funnel_adopcion_extracta partir de 20230101
+query3 = f"""select *
+             from public.LCD_O_{previous_date}
+             where oferta='con_oferta'
+             """
+conn = wr.redshift.connect("redshift_devsie")
+df2 = wr.redshift.read_sql_query(query3, conn)
+
+
+# In[6]:
+
+
+## Historico de cuentas en data_lake.funnel_adopcion_extracta partir de 20230101
+query3 = f"""select *
+             from data_lake.lc_resumen
+             where estatus__c = 'true' and proveedor__c = 'FISERV' and partition_0 = (SELECT MAX(partition_0) FROM data_lake.lc_resumen)
+             """
+conn = wr.redshift.connect("redshift_devsie")
+df2 = wr.redshift.read_sql_query(query3, conn)
+
+
+# In[7]:
+
+
+df2 = df2.dropna()
+df2['limite_de_credito__c'] = pd.to_numeric(df2['limite_de_credito__c'], errors='coerce')
+
+
+# In[8]:
+
+
+df2.info()
+
+
+# In[9]:
+
+
+# Drop rows with NaN values if needed
+df2.dropna(subset=['limite_de_credito__c'], inplace=True)
+
+
+# In[10]:
+
+
+df2['limite_de_credito__c'].describe()
+
+
+# In[11]:
+
+
+df2['limite_de_credito__c'].sum()
+
+
+# In[12]:
+
+
+df2 =df2[df2['limite_de_credito__c']>=2000]
+
+
+# In[13]:
+
+
+profile= ProfileReport(df2, minimal=True)
+profile.to_file(output_file=f'/home/ec2-user/SageMaker/Navit/Reporte ofertas de Credito/HTML ofertas de credito/Reporte.html')
+
+
+# In[14]:
+
+
+df2['limite_de_credito__c'].describe()
+
+
+# In[16]:
+
+
+## Historico de cuentas en data_lake.funnel_adopcion_extracta partir de 20230101
+query3 = f"""select grupo, count(*)
+             from (
+                    select 
+                        case 
+                        when limite_de_credito__c::numeric >=0 and limite_de_credito__c::numeric<=5000 then 'lc: 0 - 5,000'
+                        when limite_de_credito__c::numeric >5000 and limite_de_credito__c::numeric<=10000 then 'lc: 5,001 - 10,000'
+                        when limite_de_credito__c::numeric >10000 and limite_de_credito__c::numeric<=15000 then 'lc: 10,001 - 15,000'
+                        when limite_de_credito__c::numeric >15000 and limite_de_credito__c::numeric<=20000 then 'lc: 15,001 - 20,000'
+                        when limite_de_credito__c::numeric >20000 and limite_de_credito__c::numeric<=25000 then 'lc: 20,001 - 25,000'
+                        when limite_de_credito__c::numeric >25000 and limite_de_credito__c::numeric<=30000 then 'lc: 25,001 - 30,000'
+                        when limite_de_credito__c::numeric >30000 and limite_de_credito__c::numeric<=35000 then 'lc: 30,001 - 35,000'
+                        when limite_de_credito__c::numeric >35000  then 'lc: 35,001 - 35,000'
+                        end as grupo 
+
+                     from data_lake.lc_resumen
+                     where estatus__c = 'true' and proveedor__c = 'FISERV' and partition_0 = (SELECT MAX(partition_0) FROM data_lake.lc_resumen))
+             group by grupo
+             """
+conn = wr.redshift.connect("redshift_devsie")
+df_2 = wr.redshift.read_sql_query(query3, conn)
+
+
+# In[16]:
+
+
+## Historico de cuentas en data_lake.funnel_adopcion_extracta partir de 20230101
+query3 = f"""select grupo, sum(limite_de_credito__c::numeric)
+             from (
+                    select limite_de_credito__c::numeric ,
+                        case 
+                        when limite_de_credito__c::numeric >=0 and limite_de_credito__c::numeric<=5000 then '0 - $5,000'
+                        when limite_de_credito__c::numeric >5000 and limite_de_credito__c::numeric<=10000 then '$5,001 - $10,000'
+                        when limite_de_credito__c::numeric >10000 and limite_de_credito__c::numeric<=15000 then '$10,001 - $15,000'
+                        when limite_de_credito__c::numeric >15000 and limite_de_credito__c::numeric<=20000 then '$15,001 - $20,000'
+                        when limite_de_credito__c::numeric >20000 and limite_de_credito__c::numeric<=25000 then '$20,001 - $25,000'
+                        when limite_de_credito__c::numeric >25000 and limite_de_credito__c::numeric<=30000 then '$25,001 - $30,000'
+                        when limite_de_credito__c::numeric >30000 and limite_de_credito__c::numeric<=35000 then '$30,001 - $35,000'
+                        when limite_de_credito__c::numeric >35000  then '$35,001 - $40,000'
+                        end as grupo 
+
+                     from data_lake.lc_resumen
+                     where estatus__c = 'true' and proveedor__c = 'FISERV' and partition_0 = (SELECT MAX(partition_0) FROM data_lake.lc_resumen))
+             group by grupo
+             """
+conn = wr.redshift.connect("redshift_devsie")
+df_2 = wr.redshift.read_sql_query(query3, conn)
+
+
+# In[18]:
+
+
+print(df_2)
+
+
+# ### Histograma estatico con distribucion original
+
+# In[ ]:
+
+
+sns.histplot(df2['limite_de_credito__c'],bins =8,kde=True)  # kde=True adds the distribution line
+plt.xlabel('X-axis Label')
+plt.xticks(rotation=45)
+plt.ylabel('Y-axis Label')
+plt.title('Histogram de las lineas de credito Otorgadas')
+plt.show()
+
+
+# In[ ]:
+
+
+from matplotlib.ticker import FuncFormatter
+plt.hist(df2['limite_de_credito__c'], bins=8, alpha=0.6, label='Histograma')  # density=True for normalized histogram
+
+xmin, xmax = plt.xlim()
+x = np.linspace(xmin, xmax, 100)
+p = stats.norm.pdf(x, df2['limite_de_credito__c'].mean(), df2['limite_de_credito__c'].std())
+media=df2['limite_de_credito__c'].mean()
+moda =df2['limite_de_credito__c'].mode()[0]
+std =df2['limite_de_credito__c'].std()
+#plt.plot(x, p, linewidth=1, color='darkblue', label='Distribucion Normal')
+
+lines_x = [df2['limite_de_credito__c'].mean(), df2['limite_de_credito__c'].mode()[0], df2['limite_de_credito__c'].std()]
+color = ['r', 'black', 'blue']
+labels = [f'media:{ round(media,2)}',f'moda: {round(moda)}',f'Desvisión estandar: {round(std,2)}']
+for line_x, colores,labe in zip(lines_x, color, labels):
+    plt.axvline(x=line_x, color=colores, linestyle='-', linewidth=1, label =labe)
+
+plt.xlabel('Linea de credito')
+plt.ylabel('Numero de cuentas')
+plt.title('Histograma de la linea de credito asignado')
+plt.legend()  # Agregar la leyenda
+plt.show()
+
+
+# In[ ]:
+
+
+
+
