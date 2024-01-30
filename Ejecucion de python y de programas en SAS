@@ -1,0 +1,228 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Ejecucion de python y de programas en SAS
+
+# ## Importar librerias
+
+# In[1]:
+
+
+import os
+import numpy as np
+import requests
+import xmltodict
+import csv
+import pandas as pd
+import json
+import time
+import pandas as pd
+from requests.exceptions import ConnectionError
+import awswrangler as wr
+import boto3
+import re
+import calendar
+import datetime
+from datetime import datetime
+from datetime import date
+import pytz
+from datetime import timedelta
+from dateutil.relativedelta import relativedelta
+import subprocess
+from email.message import EmailMessage
+import smtplib
+from botocore.exceptions import NoCredentialsError
+
+
+# ## Función para obtener la fecha a día vencido
+
+# In[2]:
+
+
+def fecha():
+    # Set the time zone to Mexico City
+    mexico_timezone = pytz.timezone('America/Mexico_City')
+    # Get the current datetime in Mexico City
+    fecha_actual = datetime.now(mexico_timezone)
+    mes_actual = datetime.now(mexico_timezone)
+    # Extract the date
+    fecha_actual = fecha_actual.date()- relativedelta(days=0)
+    mes_actual = mes_actual.date()- relativedelta(days=0)
+    # Convert the datetime object back to a formatted string
+    fecha_actual= fecha_actual.strftime("%Y%m%d")
+    #Generar el mes 
+    mes_actual= mes_actual.strftime("%Y%m")
+    # Corvert the datetimes to a formated int 
+    fecha_actual = int(fecha_actual)
+    mes_actual = int(mes_actual)
+    # Retornar la fecha
+    return(fecha_actual,mes_actual)
+
+
+# ## Función para obtener la fecha y hora de ejecución
+
+# In[3]:
+
+
+def timestamp():
+    # Calcular Fecha y hora de ejecución para colocarsela a cada una de las cuentas
+    # Configura la zona horaria de México Central (CT)
+    mexico_central = pytz.timezone('America/Mexico_City')
+    # Obtiene la fecha y hora actual en la zona horaria de México Central
+    current_time = datetime.now(mexico_central)
+    # Formatea la fecha y hora actual según tus necesidades
+    formatted_time = current_time.strftime('%Y-%m-%d %H:%M:%S')
+    return(formatted_time)
+
+
+# ## Función para consultar la tabla de control de insumos
+
+# In[ ]:
+
+
+def control_insumos():
+    fecha_actual,mes_actual=fecha()
+    sql1 = f""" SELECT "data_staging.ta_slf_cuentafactura__c",
+                       "data_lake.tp_reportes_pagos_brm",
+                       "black_box.cartera",
+                       "data_staging.slf_grupocodificacion__c",
+                       "data_staging.ta_slf_case",
+                       "data_lake.funnel_adopcion_extract",
+                       "credito_ext.funnel_adopcion"
+                FROM public.Tabla_control_insumos
+                WHERE partition_0= {mes_actual}
+                      and fecha_validacion={fecha_actual}
+                limit 100;
+                   """
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    df1 = wr.redshift.read_sql_query(sql1,conn)
+    
+    ultima_fila = df1.iloc[-1, :]
+    
+    return(ultima_fila)
+
+
+# ## Función para ejecutar los programas shell
+
+# In[ ]:
+
+
+def ejecucion_sh(comando):
+    # Ejecuta el comando en la terminal y captura la salida
+    resultado = subprocess.run(comando, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+
+    # Imprime la salida del comando
+    print("Salida del comando:")
+    print(resultado.stdout)
+
+    # Imprime la salida de error, si hay
+    if resultado.stderr:
+        print("Error del comando:")
+        print(resultado.stderr)
+
+
+# ## Función para ejecutar el modelo 
+
+# In[ ]:
+
+
+def ejecucion_modelo():
+    ultima_fila= control_insumos()
+    if ultima_fila.eq('correcto').all():
+        print("**********************Atención especial**********************")
+        # Define la línea de código que deseas ejecutar en la terminal
+        comando = "bash  /opt/sas/SASHomeCompute/SASFoundation/9.4/code_m/asignacion_lc/atencion_especial.sh"
+        ejecucion_sh(comando)
+        print("*************************************************************")
+        #print("***************************Nombres***************************")
+        # Define la línea de código que deseas ejecutar en la terminal
+        #comando = "bash /sasdataTP/nombres.sh"
+       # ejecucion_sh(comando)
+        print("*************************************************************")
+        print("*******************Lc_tablas y Matriz_base*******************")
+        # Define la línea de código que deseas ejecutar en la terminal
+        comando = "bash /sasdataTP/matriz_base.sh"
+        ejecucion_sh(comando)
+        print("*************************************************************")
+        print("**********************Reportes**********************")
+        # Define la línea de código que deseas ejecutar en la terminal
+        comando = "bash /sasdataTP/reportes.sh"
+        ejecucion_sh(comando)
+        print("*************************************************************")
+
+    else:
+        print("Al menos un renglón de la última fila no dice 'Correcto'")
+
+
+# ## Función para enviar el correo
+
+# In[ ]:
+
+
+def enviar_correos(remitente, password, receivers,subject ,mensaje):
+    email = EmailMessage()
+    email["From"] = remitente
+    email["to"] = receivers
+    email["Subject"] = f'{subject}'
+    email.set_content(mensaje)
+
+    listas_correos = ', '.join(receivers)
+    smtp = smtplib.SMTP_SSL('smtp.gmail.com')
+
+    password = "csvj ukly dulz lutm".encode('ascii', 'ignore').decode('ascii')
+    smtp.login(remitente,password)
+    # tener el log (235, b'2.7.0 Accepted')
+
+    smtp.sendmail(remitente,receivers,email.as_string())
+    smtp.quit()
+
+
+# ## Función para generar correo
+
+# In[ ]:
+
+
+def correo(receivers):
+    
+    sql = f""" SELECT usuario, Id_ejecucion
+           FROM credit_audit.ejecucion_predeterminada;
+                   """
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    df = wr.redshift.read_sql_query(sql,conn)
+
+    # Lista de destinatarios
+    usuario= df['usuario'][0]
+    # id_ejecucion
+    id_ejecucion= df['id_ejecucion'][0]
+    # id_modelo
+    id_modelo= df['id_modelo'][0]
+    
+    #Generar fecha y hora en la que termino la ejecución del modelo
+    formatted_time=timestamp()
+    
+    ### Enviar correo
+    remitente= 'tplaybot252@gmail.com'
+    password = 'Memo1234tpe23++'
+
+    # Crear el objeto del mensaje
+    subject="Ejecución del modelo de asignación de linea de crédito"
+    mensaje = f"""Estimados usuarios.
+    Se notifica que el {usuario} con id {id_ejecucion} ejecuto el modelo de asignación de linea de crédito con
+    el id del modelo {id_modelo} el {formatted_time}."""
+
+    enviar_correos(remitente, password, receivers,subject ,mensaje)
+
+
+# ## Ejecución del modelo
+
+# In[ ]:
+
+
+# Lista de destinatarios
+receivers=['juan.resendis@totalplay.com.mx','alexander.ayala@totalplay.com.mx','itzel.islas@totalplay.com.mx']
+control_insumos()
+ejecucion_modelo()
+correo(receivers)
+
