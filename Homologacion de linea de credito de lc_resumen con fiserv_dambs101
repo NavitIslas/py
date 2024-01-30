@@ -1,0 +1,204 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Homologacion de linea de credito de lc_resumen con fiserv_dambs101
+
+# ## Importar librerias
+
+# In[1]:
+
+
+import numpy as np
+from datetime import datetime
+import awswrangler as wr
+import pandas as pd
+import calendar
+import datetime
+from datetime import datetime
+from datetime import date
+import pytz
+from datetime import timedelta
+from dateutil.relativedelta import relativedelta
+import boto3
+from botocore.exceptions import ClientError
+from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE
+from pptx.util import Inches
+import plotly.express as px
+import pandas as pd
+from pandas_profiling import ProfileReport
+import warnings
+warnings.filterwarnings('ignore')
+
+
+# ## Obtener la fecha del día vencido en el formato 20230910
+
+# In[2]:
+
+
+# Set the time zone to Mexico City
+mexico_timezone = pytz.timezone('America/Mexico_City')
+
+# Get the current datetime in Mexico City
+current_datetime = datetime.now(mexico_timezone)
+
+# Extract the date
+current_date = current_datetime.date()
+#Convert the datetime object back to a formatted string
+current_date= current_date.strftime("%Y%m%d")
+
+
+# Print the result in a formatted way
+print("día :",current_date )
+
+
+# ## Crear la base public.credit_limit
+
+# In[3]:
+
+
+def create_table():
+    query = f"""create table public.credit_limit as(
+                    select a.idcuentabrm__c,a.no_fiserv__c, a.estatus__c, a.createddate, 
+                           b.credit_limit, b.status, b.credit_limit_date, 
+                           c.limite_de_credito__c::float8,
+                           case when b.credit_limit = c.limite_de_credito__c::float8 then 1
+                                else 0
+                           end as coincidencia_credit_limit,
+                           b.credit_limit as limite_de_credito,
+                           TO_CHAR(CURRENT_DATE, 'YYYYMMDD') AS FechaActual,
+                           row_number() over(partition by a.idcuentabrm__c order by b.credit_limit_date desc) as rownum
+                    from (select distinct idcuentabrm__c,no_fiserv__c, estatus__c, createddate
+                          from credito_ext.cat_ctatelco_ctabank_fiserv
+                          where info_day=(select max(info_day)
+                                          from credito_ext.cat_ctatelco_ctabank_fiserv)) as a
+                    left join (select distinct account_number, credit_limit, status, credit_limit_date
+                               from credito_ext.fiserv_dambs101
+                               where info_day=(select max(info_day)
+                                               from credito_ext.fiserv_dambs101)
+                                     and credit_limit is not null) as b
+                    on a.no_fiserv__c=b.account_number::int8
+                    left join (select cuenta,limite_de_credito__c
+                               from data_lake.lc_resumen
+                               where partition_0=(select max(partition_0)
+                                                  from data_lake.lc_resumen)) as c
+                    on a.idcuentabrm__c=c.cuenta
+                    where b.credit_limit is not null
+                    );
+            """
+
+    conn = wr.redshift.connect("redshift_devsie")
+
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        cursor.execute("commit;")
+
+    conn.close()
+
+
+# In[4]:
+
+
+create_table()
+
+
+# ## Unload de la tabla lc_resumen
+
+# In[5]:
+
+
+def unload_LCD_SASSLF(current_date):
+    query = f"""unload ($$
+                            select distinct a.cuenta,
+                                   coalesce(b.limite_de_credito::varchar,a.limite_de_credito__c) as limite_de_credito__c,
+                                   a.estatus__c,a.tienda__c,a.proveedor__c,a.fecha
+                            from(select *
+                                 from data_lake.lc_resumen
+                                 where partition_0=(select max(partition_0)
+                                                   from data_lake.lc_resumen)) as a
+                            left join(select idcuentabrm__c,limite_de_credito
+                                      from public.credit_limit
+                                      where rownum=1) as b 
+                            on a.cuenta=b.idcuentabrm__c
+                            $$
+                            )
+                            TO 's3://desarrollos-bigdata-inovacion-us-east-1/SAS/sas94/lc_resumen/{current_date}/lc_resumen_{current_date}.parquet'
+                            IAM_ROLE 'arn:aws:iam::903746939682:role/ReadTP'
+                            FORMAT PARQUET
+                            PARALLEL OFF;
+            """
+
+    conn = wr.redshift.connect("redshift_devsie")
+
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        cursor.execute("commit;")
+
+    conn.close()
+
+
+# In[6]:
+
+
+unload_LCD_SASSLF(current_date)
+
+
+# ## Eliminar la tabla public.credit_limit
+
+# In[7]:
+
+
+def drop_table():
+    query = f"""drop table public.credit_limit 
+            """
+
+    conn = wr.redshift.connect("redshift_devsie")
+
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        cursor.execute("commit;")
+
+    conn.close()
+
+
+# In[8]:
+
+
+drop_table()
+
+
+# ## Correr el crawler Linea_Credito__c
+
+# In[9]:
+
+
+def crawler():
+    # ## Correr Crawler Linea_Credito__c
+
+    # In[5]:
+
+
+    # Initialize a Boto3 Glue client
+    glue_client = boto3.client('glue', region_name='us-east-1')
+
+    # Replace 'your-crawler-name' with the name of your Glue Crawler
+    crawler_name = 'Linea_Credito__c'
+
+    # Start the Glue Crawler
+    response = glue_client.start_crawler(Name=crawler_name)
+
+    # Print the response or handle it as needed
+    print(response)
+
+
+# In[10]:
+
+
+crawler()
+
+
+# In[ ]:
+
+
+
+
