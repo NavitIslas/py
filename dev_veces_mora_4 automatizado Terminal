@@ -1,0 +1,313 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # dev_veces_mora_4 automatizado
+
+# ## Importar librerias
+
+# In[1]:
+
+
+import numpy as np
+from datetime import datetime
+import awswrangler as wr
+import pandas as pd
+import calendar
+import datetime
+from datetime import datetime
+from datetime import date
+import pytz
+from datetime import timedelta
+from dateutil.relativedelta import relativedelta
+import boto3
+from botocore.exceptions import ClientError
+import warnings
+import psycopg2
+import os
+from email.message import EmailMessage
+import smtplib
+from botocore.exceptions import NoCredentialsError
+
+
+# ## Código para ignorar warnings
+
+# In[2]:
+
+
+warnings.simplefilter('ignore')
+
+
+# ## Conexion a redshift
+
+# In[3]:
+
+
+boto3.setup_default_session(region_name="us-east-1")
+conn = wr.redshift.connect("redshift_devsie")
+
+
+# ## Variables para la creación de las tablas
+
+# ### Obtener fecha del día de hoy, de seis meses atras y de doce meses atras
+
+# In[4]:
+
+
+# Set the time zone to Mexico City
+mexico_timezone = pytz.timezone('America/Mexico_City')
+
+# Get the current datetime in Mexico City
+current_datetime = datetime.now(mexico_timezone)
+
+# Extract the date
+current_date = current_datetime.date()
+previous_date=current_datetime.date() - relativedelta(days=1)
+six_months_ago=previous_date - relativedelta(months=6)
+twelve_months_ago=previous_date - relativedelta(months=12)
+
+# Convert the datetime object back to a formatted string
+previous_date= previous_date.strftime("%Y%m%d")
+six_months_ago = six_months_ago.strftime("%Y%m%d")
+twelve_months_ago= twelve_months_ago.strftime("%Y%m%d")
+
+
+# Corvert the datetimes to a formated int 
+previous_date = int(previous_date)
+six_months_ago = int(six_months_ago)
+twelve_months_ago = int(twelve_months_ago)
+
+
+# Print the result in a formatted way
+print("día vencido:",previous_date )
+print("Seis meses atras del día vencido", six_months_ago)
+print("Doce meses atras del día vencido", twelve_months_ago)
+
+
+# ## Validar si en las base black_box.cartera hay información a día vencido
+
+# In[5]:
+
+
+sql1 = f"""
+           select 
+                 cuenta,fecha_informacion
+           from black_box.cartera
+           where fecha_informacion={previous_date}
+           limit 100;
+               """
+boto3.setup_default_session(region_name="us-east-1")
+conn = wr.redshift.connect("redshift_devsie")
+df1 = wr.redshift.read_sql_query(sql1,conn)
+
+
+# ## Validar si en las base black_box.cartera hay información de un año atras
+
+# In[6]:
+
+
+sql2 = f"""
+           select 
+                 cuenta,fecha_informacion
+           from black_box.cartera
+           where fecha_informacion={twelve_months_ago}
+           limit 100;
+               """
+boto3.setup_default_session(region_name="us-east-1")
+conn = wr.redshift.connect("redshift_devsie")
+df2 = wr.redshift.read_sql_query(sql2,conn)
+
+
+# ## Validar si existe la carpeta en S3
+
+# In[ ]:
+
+
+s3_client = boto3.client('s3', region_name='us-east-1')
+def check_s3_folder(bucket_name, folder_name):
+    """
+    Verifica si una carpeta (prefijo) existe en un bucket de S3.
+
+    :param bucket_name: Nombre del bucket de S3.
+    :param folder_name: Nombre de la carpeta (prefijo) que se desea verificar.
+    :return: True si la carpeta existe, False en caso contrario.
+    """
+    s3 = boto3.client('s3')
+
+    try:
+        # Listamos los objetos en el bucket con el prefijo dado
+        response = s3.list_objects_v2(Bucket=bucket_name, Prefix=folder_name)
+
+        # Si hay algún objeto con el prefijo, entonces la carpeta existe
+        return 'Contents' in response
+    except NoCredentialsError:
+        print("Las credenciales de AWS no están disponibles.")
+        return False
+
+
+# In[ ]:
+
+
+bucket_name = 'desarrollos-bigdata-inovacion-us-east-1'
+folder_name = f'SAS/sas94/dev_veces_mora_4/{previous_date}'
+
+
+# ## Enviar correo
+
+# In[ ]:
+
+
+def enviar_correos(remitente, password, receivers,subject ,mensaje):
+    email = EmailMessage()
+    email["From"] = remitente
+    email["to"] = receivers
+    email["Subject"] = f'{subject}'
+    email.set_content(mensaje)
+
+    listas_correos = ', '.join(receivers)
+    smtp = smtplib.SMTP_SSL('smtp.gmail.com')
+
+    password = "csvj ukly dulz lutm".encode('ascii', 'ignore').decode('ascii')
+    smtp.login(remitente,password)
+    # tener el log (235, b'2.7.0 Accepted')
+
+    smtp.sendmail(remitente,receivers,email.as_string())
+    smtp.quit()
+
+
+# ## Subir la tabla dev_veces_mora a S3 en formato parquet
+
+# In[ ]:
+
+
+if not df1.empty:
+    if not df2.empty:
+        if not check_s3_folder(bucket_name, folder_name):
+            sql = f"""UNLOAD ($$
+                                SELECT cuenta,
+                                       sum(count_90) as sum_count_90,
+                                       sum(count_60) as sum_count_60
+                                FROM (SELECT *,
+                                             case 
+                                                 when  max_mora>90 then 1
+                                             end as count_90,
+
+                                             case 
+                                                 when  max_mora>60 then 1
+                                             end as count_60
+                                      FROM (SELECT cuenta,
+                                                   anno,
+                                                   mes,
+                                                   max(morosidad) as max_mora
+                                            FROM (SELECT  cuenta,
+                                                          compania,
+                                                          substring(fecha_informacion, 1,4) as anno,
+                                                          substring(fecha_informacion, 5,2) as mes,
+                                                          substring(fecha_informacion, 7,2) as dia,
+                                                          morosidad ,
+                                                          atraso
+                                                  FROM black_box.cartera
+                                                  where fecha_informacion>={twelve_months_ago} and  fecha_informacion<={previous_date}
+                                                  )
+                                            GROUP BY cuenta,anno ,mes
+                                           )
+                                            )
+                                GROUP BY cuenta
+                        $$)
+                        TO 's3://desarrollos-bigdata-inovacion-us-east-1/SAS/sas94/dev_veces_mora_4/{previous_date}/dev_veces_mora_4_{previous_date}'
+                        IAM_ROLE 'arn:aws:iam::903746939682:role/ReadTP'
+                        PARALLEL OFF
+                        FORMAT PARQUET
+               """
+            boto3.setup_default_session(region_name="us-east-1")
+            conn = wr.redshift.connect("redshift_devsie")
+
+            with conn.cursor() as cursor:
+                 cursor.execute(sql)
+                 cursor.execute("commit;")
+
+            conn.close()
+            
+            ### Enviar correo
+            remitente= 'tplaybot252@gmail.com'
+            password = 'Memo1234tpe23++'
+
+            # Lista de destinatarios
+            receivers=['juan.resendis@totalplay.com.mx','alexander.ayala@totalplay.com.mx','itzel.islas@totalplay.com.mx']
+
+
+            # Crear el objeto del mensaje
+            subject="dev_veces_mora_4"
+            mensaje = f"""Estimado usuario.
+            Se actualizo correctamente la tabla dev_veces_mora_4 con información al {previous_date}."""
+
+            enviar_correos(remitente, password, receivers,subject ,mensaje)
+        else:
+            print("Ya existe la carpeta en S3.")
+            ### Enviar correo
+            remitente= 'tplaybot252@gmail.com'
+            password = 'Memo1234tpe23++'
+
+            # Lista de destinatarios
+            receivers=['juan.resendis@totalplay.com.mx','alexander.ayala@totalplay.com.mx','itzel.islas@totalplay.com.mx']
+
+
+            # Crear el objeto del mensaje
+            subject="dev_veces_mora_4"
+            mensaje = f"""Estimado usuario.
+            No se actualizo correctamente la tabla dev_veces_mora_4 con información al {previous_date}, ya que ya 
+            existe la carpeta en S3."""
+
+            enviar_correos(remitente, password, receivers,subject ,mensaje)
+    else:
+        print("No hay información en la base black_box.cartera para el día",one_year_ago)
+        ### Enviar correo
+        remitente= 'tplaybot252@gmail.com'
+        password = 'Memo1234tpe23++'
+
+        # Lista de destinatarios
+        receivers=['juan.resendis@totalplay.com.mx','alexander.ayala@totalplay.com.mx','itzel.islas@totalplay.com.mx']
+
+
+        # Crear el objeto del mensaje
+        subject="dev_veces_mora_4"
+        mensaje = f"""Estimado usuario.
+        No se actualizo correctamente la tabla dev_veces_mora_4 con información al {previous_date}, ya que no hay 
+        información en la base black_box.cartera al {twelve_months_ago}."""
+
+        enviar_correos(remitente, password, receivers,subject ,mensaje)
+else:
+    print("No hay información en la base black_box.cartera para el día",previous_date)
+    ### Enviar correo
+    remitente= 'tplaybot252@gmail.com'
+    password = 'Memo1234tpe23++'
+
+    # Lista de destinatarios
+    receivers=['juan.resendis@totalplay.com.mx','alexander.ayala@totalplay.com.mx','itzel.islas@totalplay.com.mx']
+
+
+    # Crear el objeto del mensaje
+    subject="dev_veces_mora_4"
+    mensaje = f"""Estimado usuario.
+    No se actualizo correctamente la tabla dev_veces_mora_4 con información al {previous_date}, ya que no hay 
+    información en la base black_box.cartera al {previous_date}."""
+
+    enviar_correos(remitente, password, receivers,subject ,mensaje)
+
+
+# ## Correr Crawler
+
+# In[ ]:
+
+
+# Initialize a Boto3 Glue client
+glue_client = boto3.client('glue', region_name='us-east-1')
+
+# Replace 'your-crawler-name' with the name of your Glue Crawler
+crawler_name = 'dev_veces_mora_4'
+
+# Start the Glue Crawler
+response = glue_client.start_crawler(Name=crawler_name)
+
+# Print the response or handle it as needed
+print(response)
+
