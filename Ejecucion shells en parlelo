@@ -1,0 +1,53 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Ejecucion shells
+
+# ## Importar librerias
+
+# In[ ]:
+
+
+import subprocess
+from concurrent.futures import ThreadPoolExecutor
+
+
+# ## Funcion para ejecutar comandos
+
+# In[ ]:
+
+
+def run_command(command):
+    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    output, error = process.communicate()
+    return (output, error)
+
+
+# ## Ejecutar procesos en paralelo
+
+# In[ ]:
+
+
+# Define your shell commands
+command1 =  "bash  /opt/sas/SASHomeCompute/SASFoundation/9.4/code_m/asignacion_lc/holamundo1.sh"
+command2 =  "bash  /opt/sas/SASHomeCompute/SASFoundation/9.4/code_m/asignacion_lc/holamundo2.sh"
+
+# Run commands in parallel using ThreadPoolExecutor
+with ThreadPoolExecutor(max_workers=2) as executor:
+    future1 = executor.submit(run_command, command1)
+    future2 = executor.submit(run_command, command2)
+
+    # Wait for both commands to finish
+    result1 = future1.result()
+    result2 = future2.result()
+
+    # Access output and error of each command
+    output1, error1 = result1
+    output2, error2 = result2
+
+    # Do something with the results
+    print("Command 1 output:", output1.decode())
+    print("Command 1 error:", error1.decode())
+    print("Command 2 output:", output2.decode())
+    print("Command 2 error:", error2.decode())
+
