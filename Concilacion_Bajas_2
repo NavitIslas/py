@@ -1,0 +1,186 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Concilacion_Bajas
+
+# ## Importar librerias
+
+# In[1]:
+
+
+import pandas as pd
+import awswrangler as wr
+import boto3
+from datetime import datetime
+import re
+import calendar
+import datetime
+from datetime import datetime
+from datetime import date
+import pytz
+from datetime import timedelta
+from dateutil.relativedelta import relativedelta
+import boto3
+from botocore.exceptions import ClientError
+
+
+# ## Obtener la fecha
+
+# In[2]:
+
+
+# Set the time zone to Mexico City
+mexico_timezone = pytz.timezone('America/Mexico_City')
+
+# Get the current datetime in Mexico City
+current_datetime = datetime.now(mexico_timezone)
+
+# Extract the date
+current_date = current_datetime.date()
+previous_date=current_datetime.date() - relativedelta(days=0)
+
+# Convert the datetime object back to a formatted string
+previous_date= previous_date.strftime("%Y%m%d")
+
+
+# Corvert the datetimes to a formated int 
+previous_date = int(previous_date)
+
+
+# Print the result in a formatted way
+print("día vencido:",previous_date )
+
+
+# ## Define una función que se trae la lista de archivos de la carpeta de S3
+
+# In[3]:
+
+
+def list_files_in_s3_folder(bucket_name, folder_path):
+    # Crea una instancia del cliente de S3
+    s3 = boto3.client('s3')
+
+    # Realiza la llamada al servicio para listar los objetos dentro del bucket y carpeta específicos
+    response = s3.list_objects_v2(Bucket=bucket_name, Prefix=folder_path)
+
+    # Verifica si hay algún contenido
+    if 'Contents' in response:
+        # Obtiene la lista de nombres de los archivos en la carpeta
+        files = [obj['Key'] for obj in response['Contents']]
+        return files
+    else:
+        return []
+
+
+# ## Declara el bucket y la ruta de la carpeta de S3
+
+# In[4]:
+
+
+# Reemplaza 'nombre-del-bucket' y 'ruta/dentro/de/la/carpeta' con los valores correspondientes
+bucket_name = 'desarrollos-bigdata-inovacion-us-east-1'
+folder_path = 'SAS/bajas_totales/rawdata'
+
+
+# ## Manda llamar la función
+
+# In[5]:
+
+
+# Llama a la función para listar los archivos
+files_list = list_files_in_s3_folder(bucket_name, folder_path)
+
+# Imprime la lista de archivos
+files_list
+
+
+# ## Nos traemos todos los elemtos a parrtir del indice 1 de la lista de archivos
+
+# In[6]:
+
+
+files_list=files_list[1:]
+files_list
+
+
+# ## Definir función para convertir una cadena de texto a un objeto de fecha
+
+# In[7]:
+
+
+def convert_to_date(s):
+    try:
+        return datetime.strptime(s,'%d%m%Y').date()
+    except ValueError:
+        return 'Formato de fecha incorrecto'
+
+
+# ## Concatenar todos los archivos de la lista
+
+# In[8]:
+
+
+# Crear un DataFrame vacío
+df = pd.DataFrame()
+for lis in files_list:
+    # Cadena de texto en el formato 'DDMMYYYY'
+    path=f's3://desarrollos-bigdata-inovacion-us-east-1/{lis}'
+    info_day = path.split('/')[6].split('_')[3]
+    # Convertir la cadena a un objeto de fecha
+    converted_date = convert_to_date(info_day)
+    df0 = pd.read_csv(path,dtype={'Numero_contrato_servicio':str})
+    first_row_df = df0.iloc[0]
+    first_row_df = str(first_row_df)
+    resultado = re.findall(r'\w+|\W', first_row_df)
+    #Leer el archivo con pandas pero con dtype correcto y sep que venga
+    df1 = pd.read_csv(path,sep=f'{resultado[1]}',dtype={f'{resultado[0]}':str})
+    df1.columns = df1.columns.str.lower()
+    #Traernos solo la columna de cuenta,Estatus_credito y Lc_asignada
+    df1=df1[[f'{resultado[0].lower()}','estatus_credito' ,'lc_asignada']]
+    #Renombrar las columnas
+    df1.columns = ['cuenta', 'estatus_credito', 'lc_asignada']
+    #Cambiar la columna lc_asignada a tipo entero
+    df1['lc_asignada'].astype(int)
+    #Agregar la columna fecha_baja
+    df1['fecha_baja']=converted_date
+    # Apilar los __DataFrames__ uno encima del otro
+    df= pd.concat([df, df1], axis=0)
+# quitar duplicados
+df=df.drop_duplicates(subset=['cuenta'])
+# resetear el indice y quitarlo como columna
+df=df.reset_index(drop=True)
+print(df)
+df.to_parquet(f's3://desarrollos-bigdata-inovacion-us-east-1/SAS/basebh_bajas/{previous_date}/bajas.parquet')
+
+
+# ## Correr el crawler
+
+# In[9]:
+
+
+# Initialize a Boto3 Glue client
+glue_client = boto3.client('glue', region_name='us-east-1')
+
+# Replace 'your-crawler-name' with the name of your Glue Crawler
+crawler_name = 'basebh_bajas'
+
+# Start the Glue Crawler
+response = glue_client.start_crawler(Name=crawler_name)
+
+# Print the response or handle it as needed
+print(response)
+
+
+# ## Buscar una cuenta en especifico en la base final de todas las bajas 
+
+# In[10]:
+
+
+df[df['cuenta']=='0100192269']
+
+
+# In[ ]:
+
+
+
+
