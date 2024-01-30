@@ -1,0 +1,527 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Automatización dar cuentas de alta y baja Terminal
+
+# ## Instalar librerias
+
+# In[1]:
+
+
+pip install xmltodict
+
+
+# ## Importar librerias
+
+# In[2]:
+
+
+import os
+import numpy as np
+import requests
+import xmltodict
+import csv
+import pandas as pd
+import json
+import time
+import pandas as pd
+from requests.exceptions import ConnectionError
+import awswrangler as wr
+import boto3
+import re
+import calendar
+import datetime
+from datetime import datetime
+from datetime import date
+import pytz
+from datetime import timedelta
+from dateutil.relativedelta import relativedelta
+
+
+# ## Función para obtener la fecha actual para crear la carpeta de los trozos y el archivo con los logs
+
+# In[3]:
+
+
+def fecha():
+    # Set the time zone to Mexico City
+    mexico_timezone = pytz.timezone('America/Mexico_City')
+    # Get the current datetime in Mexico City
+    fecha_actual = datetime.now(mexico_timezone)
+    # Extract the date
+    fecha_actual = fecha_actual.date()
+    # Convert the datetime object back to a formatted string
+    fecha_actual= fecha_actual.strftime("%Y%m%d")
+    # Corvert the datetimes to a formated int 
+    fecha_actual = int(fecha_actual)
+    # Retornar la fecha
+    return(fecha_actual)
+
+
+# ## Función para obtener la fecha y hora
+
+# In[ ]:
+
+
+def timestamp():
+    # Calcular Fecha y hora de ejecución para colocarsela a cada una de las cuentas
+    # Configura la zona horaria de México Central (CT)
+    mexico_central = pytz.timezone('America/Mexico_City')
+    # Obtiene la fecha y hora actual en la zona horaria de México Central
+    current_time = datetime.now(mexico_central)
+    # Formatea la fecha y hora actual según tus necesidades
+    formatted_time = current_time.strftime('%Y-%m-%d %H:%M:%S')
+    return(formatted_time)
+    
+
+
+# ## Ver la lista de archivos que hay en la carpeta de S3
+
+# ### Define una función que se trae la lista de archivos de la base public.crmweb_flag 
+
+# In[4]:
+
+
+def list_files_in_s3_folder(fecha_actual,tipo):
+    query = f"""select *
+                from public.crmweb_flag
+                where "timestamp" =(select max("timestamp") 
+                                    from public.crmweb_flag 
+                                    where info_day = 20231117 and estatus_valfile = 1
+                                          and tipo_estatus='desactivar' );"""
+    boto3.setup_default_session(region_name="us-east-1")
+    conn = wr.redshift.connect("redshift_devsie")
+    df = wr.redshift.read_sql_query(query, conn)
+    # Deja todos los archivos en una lista
+    files_list =df['archivo'].to_list()
+    return(files_list)
+
+
+# ## Funcion que concatena todos los archivos que se encuentran en la ruta y los deja en un solo dataframe
+
+# In[ ]:
+
+
+def archivo(files_list,tipo,fecha_actual):
+    # Crear un dataframe vacio
+    df = pd.DataFrame()
+    # Concatenar todos los archivos que se encuentren en la ruta
+    for file in files_list:
+        df0 = pd.read_csv(f'/sasdata/crmweb/{tipo}/{fecha_actual}/archivos/{file}',sep=',',dtype={'CUENTA':str})
+        df0 = df0[['CUENTA']]
+        df0.columns= ['cuenta']
+        # Apilar los __DataFrames__ uno encima del otro
+        df= pd.concat([df, df0], axis=0)
+    return(df)
+
+
+# ## Función que crea las carpetas
+
+# In[ ]:
+
+
+def carpeta(fecha_actual,a,tipo):
+    carpetas=['lotes','logs','errores','reportes']
+    # Crea el nombre de las carpetas con la fecha actual
+    for carpeta in carpetas:
+        nombre_carpeta = f"/sasdata/crmweb/{tipo}/{fecha_actual}/{carpeta}"
+        # Crea la carpeta si no existe
+        if not os.path.exists(nombre_carpeta):
+            os.makedirs(nombre_carpeta)
+        if carpeta == 'lotes':
+            nombre_carpeta = f"/sasdata/crmweb/{tipo}/{fecha_actual}/{carpeta}/{carpeta}_{a}_{fecha_actual}"
+            # Crea la carpeta si no existe
+            if not os.path.exists(nombre_carpeta):
+                os.makedirs(nombre_carpeta)
+
+
+# ## Función que genera el reporte de cuantas cuentas tiene el archivo y cuantas de esas cuentas son unicas
+
+# In[ ]:
+
+
+def report(df,fecha_actual,tipo):
+    # Cambiar layout del dataframe
+    df.columns= ['cuenta']
+    # Convertir la columna cuenta a string
+    df['cuenta'] = df['cuenta'].astype(str)
+    # Se trae unicamente las cuentas que son unicas del dataframe
+    unique_df = df.drop_duplicates(subset=['cuenta'])
+    # Crea el archivo con el reporte de cuantas cuentas contiene el archivo y cuantas cuentas son unicas
+    with open(f'/sasdata/crmweb/{tipo}/{fecha_actual}/reportes/reporte_bajas_{fecha_actual}.txt', 'a') as reporte:
+        Total_de_cuentas=len(df)
+        reporte.write(f"El archivo contiene {Total_de_cuentas} cuentas\n")
+        total_de_cuentas_unicas=len(unique_df)
+        reporte.write(f"El archivo contiene {total_de_cuentas_unicas} cuentas unicas\n")
+    return(unique_df)
+
+
+# ## Función que crea la carpeta de los trozos y el archivo con los logs
+
+# In[ ]:
+
+
+def lotes(fecha_actual,unique_df,a,tipo):
+    # Lee el archivo CSV original
+    account_list=unique_df['cuenta']
+    # Divide el DataFrame en trozos de 200 registros
+    trozos = np.array_split(account_list, len(account_list) // 200 + 1)
+    # Guarda cada trozo en un archivo CSV en la carpeta correspondiente
+    nombre_carpeta=f"/sasdata/crmweb/{tipo}/{fecha_actual}/lotes/lotes_{a}_{fecha_actual}"
+    for i, trozo in enumerate(trozos):
+        nombre_archivo = f"{nombre_carpeta}/trozo_{i+1}.csv"
+        trozo.to_csv(nombre_archivo, index=False)
+
+
+# ## Función que crea una lista con todos los lotes que se crearon
+
+# In[ ]:
+
+
+def archivos(fecha_actual,carpeta,a,etiqueta,tipo):
+    if carpeta == 'logs':
+        # Ruta de la carpeta que deseas explorar
+        carpeta = f"/sasdata/crmweb/{tipo}/{fecha_actual}/{carpeta}"        
+    else:
+        if etiqueta == 'error':
+            # Ruta de la carpeta que deseas explorar
+            carpeta = f"/sasdata/crmweb/{tipo}/{fecha_actual}/{carpeta}"
+        else:    
+            # Ruta de la carpeta que deseas explorar
+            carpeta = f"/sasdata/crmweb/{tipo}/{fecha_actual}/{carpeta}/{carpeta}_{a}_{fecha_actual}"
+    # Utiliza os.listdir para obtener una lista de archivos en la carpeta
+    archivos_en_carpeta = os.listdir(carpeta)
+    return(archivos_en_carpeta)
+
+
+# ## Función que genera el token
+
+# In[ ]:
+
+
+def token_generator():
+    url = "###########################################"
+    username = "#######################"
+    password = "####################"
+
+    payload = {
+        "grant_type": "client_credentials",
+        "client_id": username,
+        "client_secret": password
+    }
+
+    # Make the POST request to obtain the access token
+    response = requests.post(url, data=payload)
+
+    # Check the response status code
+    if response.status_code == 200:
+        # Access token obtained successfully
+        access_token = response.json().get("access_token")
+        #print("Access token:", access_token)
+        #"print('hola')
+    else:
+        # Failed to obtain access token
+        print("Failed to obtain access token. Status code:", response.status_code)
+        print("Response:", response.text)
+    return access_token
+
+
+# ## Función para dar de baja los adons
+
+# In[ ]:
+
+
+def delete_register(fecha_actual,archivos_en_carpeta,a,url,tipo):
+    # Abre el archivo de log solo una vez
+    with open(f'/sasdata/crmweb/{tipo}/{fecha_actual}/logs/log_addon_{tipo}_{a}_{fecha_actual}.txt', 'a') as archivo_log:
+        for i in range(1,len(archivos_en_carpeta)+1):
+            path = f'/sasdata/crmweb/{tipo}/{fecha_actual}/lotes/lotes_{a}_{fecha_actual}/trozo_{i}.csv'
+
+            df = pd.read_csv(path, dtype={'cuenta': str})
+            account_list = df['cuenta'].to_list()
+
+            for u in account_list:
+                try:
+                    payload = {
+                        "arrLogin": {
+                            "ip": "#######",
+                            "password": "#########",
+                            "user": "########"
+                        },
+                        "cuenta": u,
+                        "idCco": "##########",
+                        "tmCode": "##########"
+                    }
+
+                    headers = {
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {token_generator()}"
+                    }
+
+                    response = requests.post(url, json=payload, headers=headers)
+
+                    # Obtenemos la fecha y la hora a la que se corrio
+                    formatted_time=timestamp()
+
+                    if response.status_code == 200:
+                        archivo_log.write(f"{u},TRUE,{formatted_time},trozo_{i}\n")
+                        borrar='EXITO'
+                    else:
+                        archivo_log.write(f"{u},FALSE,{formatted_time},trozo_{i}\n")
+                        borrar='FRACASO'
+                        break
+                except ConnectionError:
+                    with open(f'/sasdata/crmweb/{tipo}/{fecha_actual}/errores/log_errors_{tipo}_{a}_{fecha_actual}.txt', 'a') as errors:
+                        # Obtenemos la fecha y la hora a la que se corrio
+                        formatted_time=timestamp()
+                        errors.write(f"001,error de conexion,{formatted_time},REINICIAR\n")
+            borrar='END'            
+    return(borrar)
+
+
+# ## Función para concatenar los logs
+
+# In[ ]:
+
+
+def df_logs(fecha_actual,tipo):
+    files=archivos(fecha_actual,'logs',1,'exito',tipo)
+    files = [elemento for elemento in files if elemento.endswith('.txt')]
+    # Crear un dataframe vacio
+    df = pd.DataFrame()
+    for file in files:
+        df0 = pd.read_csv(f"/sasdata/crmweb/{tipo}/{fecha_actual}/logs/{file}",sep=',', header=None,dtype=str)
+        # Apilar los __DataFrames__ uno encima del otro
+        df= pd.concat([df, df0], axis=0)
+    df.columns=['cuenta', 'estatus', 'fecha','archivo']
+    return(df)
+
+
+# ## Función para validar si todas las cuentas a dar de baja se encuentran en el archivo de los logs
+
+# In[ ]:
+
+
+def cuentas_faltantes(fecha_actual,a,unique_df,tipo):
+    df_3 =df_logs(fecha_actual,tipo)
+    # Convertir la columna cuenta del archivo de logs a string
+    df_3['cuenta'] = df_3['cuenta'].astype(str)
+    # Convertir la columna cuenta del dataframe sin duplicados a string
+    unique_df['cuenta'] = unique_df['cuenta'].astype(str)
+    # Nos traemos unicamente la cuenta del dataframe que ya no tiene duplicados
+    unique_df=unique_df[['cuenta']]
+    # Cruzamos la base con las cuentas del dataframe que no tiene duplicados con el 
+    # dataframe del log y si una cuenta se encuentra en ambos archivos les asigna la 
+    # etiqueta Both y en otro caso LEFT only """
+    union = pd.merge(unique_df,df_3 , on ='cuenta', how='left', indicator=True)
+    # Crea un dataframe con unicamente las cuentas faltantes
+    cuentas_faltantes = union[union['_merge']=='left_only'].reset_index(drop=True)
+    # Verifica que el archivo con cuentas faltantes no tenga ninguna cuenta para 
+    # finalizar el proceso, en otro caso lo reinicia
+    # Abre el archivo de log solo una vez
+    with open(f'/sasdata/crmweb/{tipo}/{fecha_actual}/errores/log_errors_{tipo}_{a}_{fecha_actual}.txt', 'a') as errors:
+        if not cuentas_faltantes.empty:
+            # Obtenemos la fecha y la hora a la que se corrio
+            formatted_time=timestamp()
+            errors.write(f"002,error cuentas faltantes,{formatted_time},REINICIAR\n")
+            cuentas='PROCESO'
+        else:
+            # Obtenemos la fecha y la hora a la que se corrio
+            formatted_time=timestamp()
+            errors.write(f"003,proceso concluyo exitosamente,{formatted_time},END\n")
+            cuentas='END'
+    return cuentas_faltantes, cuentas
+
+
+# ## Función que da de baja o alta los addons
+
+# In[ ]:
+
+
+def delete_register_addons(fecha_actual,url,tipo):
+    a=1
+    # Llama a la función que crea la fecha para nombrar los archivos
+    fecha_actual=fecha()
+    # Llama a la función para listar los archivos que se encuentran en la carpeta de S3
+    files_list = list_files_in_s3_folder(fecha_actual,tipo)
+    # Crea el dataframe con todos los archivos que se encuentran en S3
+    df=archivo(files_list,tipo,fecha_actual)
+    # Genera las carpeta
+    carpeta(fecha_actual,a,tipo)
+    # Genera el dataframe unicamente con las cuentas unicas y el reporte de cuantas cuentas
+    # y cuantas cuentas unicas tiene el dataframe
+    unique_df=report(df,fecha_actual,tipo)
+    # Genera la carpeta con los lotes del dataframe
+    lotes(fecha_actual,unique_df,a,tipo)
+    # Genera una lista con todos los lotes que se crearon del data frame
+    archivos_en_carpeta=archivos(fecha_actual,'lotes',a,'exito',tipo)
+    #Declara la variable cuentas igual a PROCESO
+    cuentas='PROCESO'
+    #Declara la variable borrar igual a EXITO
+    borrar='EXITO'
+    while cuentas == 'PROCESO':
+        while borrar == 'EXITO':
+            # Dar de baja o alta los addons
+            borrar=delete_register(fecha_actual,archivos_en_carpeta,a,url,tipo)
+        df, cuentas=cuentas_faltantes(fecha_actual,a,unique_df,tipo)
+        a=a+1
+        # Genera las carpeta
+        carpeta(fecha_actual,a,tipo)
+        # Genera la carpeta con los lotes del dataframe
+        lotes(fecha_actual,df,a,tipo)
+        # Genera una lista con todos los lotes que se crearon del data frame
+        archivos_en_carpeta=archivos(fecha_actual,'lotes',a,'exito',tipo)
+    return(a)
+    
+    
+    
+
+
+# ## Función cuentas False
+
+# In[ ]:
+
+
+def cuentas_false(fecha_actual,a,url,tipo):
+    df=df_logs(fecha_actual,tipo)
+    df=df[df['estatus']=='FALSE']
+    if not df.empty:
+        # Genera las carpeta
+        carpeta(fecha_actual,a,tipo)
+        # Genera la carpeta con los lotes del dataframe
+        lotes(fecha_actual,df,a,tipo)
+        # Genera una lista con todos los lotes que se crearon del data frame
+        archivos_en_carpeta=archivos(fecha_actual,'lotes',a,'exito',tipo)
+        # Dar de baja o alta los addons
+        delete_register(fecha_actual,archivos_en_carpeta,a,url,tipo)
+
+
+# ## Función cuando hubo un error de computadora
+
+# In[ ]:
+
+
+def delete_register_addons_error_computadora(fecha_actual,url,tipo):
+    # Llama a la función que crea la fecha para nombrar los archivos
+    fecha_actual=fecha()
+    files=archivos(fecha_actual,'lotes',1,'error',tipo)
+    files = [elemento for elemento in files if elemento.startswith('lotes')]
+    numeros=[]
+    for file in files:
+        numero=file[6]
+        numeros.append(numero)
+    numeros = [int(elemento) for elemento in numeros]
+    a=max(numeros)
+    a=a+1
+    # Llama a la función para listar los archivos que se encuentran en la base que nos deposita crmweb
+    files_list = list_files_in_s3_folder(fecha_actual,tipo)
+    # Crea el dataframe con todos los archivos que se encuentran en la base que nos deposita crmweb
+    df=archivo(files_list,tipo,fecha_actual)
+    # Genera el dataframe unicamente con las cuentas unicas y el reporte de cuantas cuentas
+    # y cuantas cuentas unicas tiene el dataframe
+    unique_df=report(df,fecha_actual,tipo)
+    df, cuentas=cuentas_faltantes(fecha_actual,a,unique_df,tipo)
+    if cuentas == 'PROCESO':
+        # Genera las carpeta
+        carpeta(fecha_actual,a,tipo)
+        # Genera la carpeta con los lotes del dataframe
+        lotes(fecha_actual,df,a,tipo)
+        # Genera una lista con todos los lotes que se crearon del data frame
+        archivos_en_carpeta=archivos(fecha_actual,'lotes',a,'exito',tipo)
+        #Declara la variable cuentas igual a PROCESO
+        cuentas='PROCESO'
+        #Declara la variable borrar igual a EXITO
+        borrar='EXITO'
+        while cuentas == 'PROCESO':
+            while borrar == 'EXITO':
+                # Dar de baja o alta los addons
+                borrar=delete_register(fecha_actual,archivos_en_carpeta,a,url,tipo)
+            df, cuentas=cuentas_faltantes(fecha_actual,a,unique_df,tipo)
+            a=a+1
+            # Genera las carpeta
+            carpeta(fecha_actual,a,tipo)
+            # Genera la carpeta con los lotes del dataframe
+            lotes(fecha_actual,df,a,tipo)
+            # Genera una lista con todos los lotes que se crearon del data frame
+            archivos_en_carpeta=archivos(fecha_actual,'lotes',a,'exito',tipo)
+    return(a)
+
+
+# ## Función para actualizar la base del dataframe
+
+# In[ ]:
+
+
+def update(fecha_actual,tipo):
+    files_list = list_files_in_s3_folder(fecha_actual,tipo)
+    for archi in files_list:
+        query = f"""UPDATE public.crmweb_flag
+                    SET estatus_valfile = 2
+                    WHERE  info_day = {fecha_actual} and archivo ='{archi}'
+                ;"""
+        boto3.setup_default_session(region_name="us-east-1")
+        conn = wr.redshift.connect("redshift_devsie")
+        with conn.cursor() as cursor:
+            cursor.execute(query)
+            cursor.execute("commit;")
+        conn.close()
+
+
+# ## Función que ejecuta todo el proceso
+
+# In[ ]:
+
+
+def addons(fecha_actual,url,tipo):
+    fecha_actual=fecha()
+    # Llama a la función que crea la fecha para nombrar los archivos
+    nombre_carpeta = f"/sasdata/crmweb/{tipo}/{fecha_actual}/logs"
+    # Crea la carpeta si no existe
+    if os.path.exists(nombre_carpeta):
+        a=delete_register_addons_error_computadora(fecha_actual,url,tipo)
+        a=a+1
+        cuentas_false(fecha_actual,a,url,tipo)
+        update(fecha_actual)
+    else:
+        a=delete_register_addons(fecha_actual,url,tipo)
+        a=a+1
+        cuentas_false(fecha_actual,a,url,tipo)
+        update(fecha_actual)
+
+
+# ## Ejecutar el proceso
+
+# ### Dar cuentas de baja
+
+# In[ ]:
+
+
+fecha_actual=fecha()
+files_list=list_files_in_s3_folder(fecha_actual,'desactivar')
+
+df =archivo(files_list,'desactivar',fecha_actual)
+
+if df.count() <=100:
+    addons(fecha_actual,"https://apiservice.sistemastp.com.mx/soasf/v1/iptv/delete",'desactivar')
+
+
+# ### Dar cuentas de alta
+
+# In[ ]:
+
+
+fecha_actual=fecha()
+files_list=list_files_in_s3_folder(fecha_actual,'activar')
+
+df =archivo(files_list,'activar',fecha_actual)
+
+if df.count() <=100:
+addons(fecha_actual,"https://apiservice.sistemastp.com.mx/soasf/v1/iptv/register",'activar')
+
+
+# In[ ]:
+
+
+time=timestamp()
+print(time)
+
