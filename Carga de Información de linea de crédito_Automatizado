@@ -1,0 +1,150 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Carga de Información de linea de crédito
+
+# ## Importar librerias
+
+# In[1]:
+
+
+import pandas as pd
+import awswrangler as wr
+
+import numpy as np
+from datetime import datetime
+import awswrangler as wr
+import pandas as pd
+import calendar
+import datetime
+from datetime import datetime
+from datetime import date
+import pytz
+from datetime import timedelta
+from dateutil.relativedelta import relativedelta
+import boto3
+from botocore.exceptions import ClientError
+from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE
+from pptx.util import Inches
+import plotly.express as px
+import pandas as pd
+from pandas_profiling import ProfileReport
+import warnings
+warnings.filterwarnings('ignore')
+
+
+# In[2]:
+
+
+# Set the time zone to Mexico City
+mexico_timezone = pytz.timezone('America/Mexico_City')
+
+# Get the current datetime in Mexico City
+current_datetime = datetime.now(mexico_timezone)
+
+# Extract the date
+current_date = current_datetime.date()
+previous_date=current_datetime.date() - relativedelta(days=0)
+
+# Convert the datetime object back to a formatted string
+previous_date= previous_date.strftime("%Y%m%d")
+
+
+# Corvert the datetimes to a formated int 
+previous_date = int(previous_date)
+
+
+# Print the result in a formatted way
+print("día vencido:",previous_date )
+
+
+# In[8]:
+
+
+def linea_credito(previous_date, path_lis):
+
+    a=1
+    for path in path_lis:
+        ## Leer el archivo de S3
+        dfslf = pd.read_csv(path,quotechar="'",dtype={'Cuenta_Factura__r.IdCuentaBRM__c':str})
+        dfslf['"Id"'] = dfslf['"Id"'].str.strip('"')
+
+
+        #dfslf['"Id"'] = dfslf['"Id"'].str.replace('[^a-zA-Z0-9]', '', regex=True)
+        dfslf['"Estatus__c"'] = dfslf['"Estatus__c"'].str.strip('"')
+        dfslf['"Name"'] = dfslf['"Name"'].str.replace('[^a-zA-Z0-9]', '', regex=True)
+        #dfslf['"Cuenta_Factura__r.IdCuentaBRM__c"'] = dfslf['"Cuenta_Factura__r.IdCuentaBRM__c"'].str.replace('[^a-zA-Z0-9]', '', regex=True)
+        #dfslf['"Estatus__c"'] = dfslf['"Estatus__c"'].str.replace('[^a-zA-Z0-9]', '', regex=True)
+        #dfslf['"LImite_de_credito__c"'] = dfslf['"LImite_de_credito__c"'].str.replace('[^a-zA-Z0-9]', '', regex=True)
+        dfslf['"Proveedor__c"'] = dfslf['"Proveedor__c"'].str.replace('[^a-zA-Z0-9]', '', regex=True)
+        dfslf['"Tipo_de_credito__c"'] = dfslf['"Tipo_de_credito__c"'].str.replace('[^a-zA-Z0-9]', '', regex=True)
+        dfslf['"Tienda__c"'] = dfslf['"Tienda__c"'].str.replace('[^a-zA-Z0-9]', '', regex=True)
+        #dfslf['"CreatedDate"'] = dfslf['"CreatedDate"'].str.replace('[^a-zA-Z0-9]', '', regex=True)
+        dfslf['"CreatedDate"'] = dfslf['"CreatedDate"'].str.strip('"')
+        
+        ##################################################################################################################################################################################
+        #################################################cuando envien el archivo con otro formato en la fecha 'createdate' descoemtar las lineas siguientes #############################
+        #dfslf['"CreatedDate"'] = pd.to_datetime(dfslf['"CreatedDate"'], format='%Y-%m-%dT%H:%M:%S.%fZ')
+        #dfslf['"CreatedDate"'] = dfslf['"CreatedDate"'].dt.strftime('%d/%m/%Y %I:%M %p')
+        
+        dfslf['"Cuenta_Factura__r.IdCuentaBRM__c"'] = dfslf['"Cuenta_Factura__r.IdCuentaBRM__c"'].str.strip('"')
+        dfslf['"LImite_de_credito__c"'] = dfslf['"LImite_de_credito__c"'].str.strip('"')
+
+
+        dfslf.rename(columns={'"Id"': "Id"}, inplace=True) 
+        dfslf.rename(columns={'"Name"': "Name"}, inplace=True) 
+        dfslf.rename(columns={'"Cuenta_Factura__r.IdCuentaBRM__c"': "Cuenta_Factura__r.IdCuentaBRM__c"}, inplace=True) 
+        dfslf.rename(columns={'"Estatus__c"': "Estatus__c"}, inplace=True) 
+        dfslf.rename(columns={'"LImite_de_credito__c"': "LImite_de_credito__c"}, inplace=True) 
+        dfslf.rename(columns={'"Proveedor__c"': "Proveedor__c"}, inplace=True) 
+        dfslf.rename(columns={'"Tienda__c"': "Tienda__c"}, inplace=True) 
+        dfslf.rename(columns={'"limiteMaximoDeCredito__c"': "limiteMaximoDeCredito__c"}, inplace=True) 
+        dfslf.rename(columns={'"CreatedDate"': "CreatedDate"}, inplace=True) 
+        dfslf.rename(columns={'"Tipo_de_credito__c"': "Tipo_de_credito__c"}, inplace=True)
+
+        ## Carga del archivo en S3 en formato parquet
+        dfslf.to_parquet(f's3://desarrollos-bigdata-inovacion-us-east-1/SAS/sas94/Linea_Credito__c/{previous_date}/dfslf_{previous_date}_{a}.parquet')
+        a=a+1
+        #print(dfslf)
+
+
+# In[4]:
+
+
+def crawler():
+    # ## Correr Crawler Linea_Credito__c
+
+    # In[5]:
+
+
+    # Initialize a Boto3 Glue client
+    glue_client = boto3.client('glue', region_name='us-east-1')
+
+    # Replace 'your-crawler-name' with the name of your Glue Crawler
+    crawler_name = 'Linea_Credito__c'
+
+    # Start the Glue Crawler
+    response = glue_client.start_crawler(Name=crawler_name)
+
+    # Print the response or handle it as needed
+    print(response)
+
+
+# In[9]:
+
+
+path_1 = 's3://desarrollos-bigdata-inovacion-us-east-1/SAS/SLF_bulk/20231107/bulkQuery_result_750Kd00000WmURLIA3_751Kd00000epA8rIAE_752Kd00000LXVfP.csv'
+path_2 = 's3://desarrollos-bigdata-inovacion-us-east-1/SAS/SLF_bulk/20231024/bulkQuery_result_7503f000006BF9iAAG_7513f000009XGzlAAG_7523f000006Dly8.csv'
+#path_lis =[path_1,path_2]
+path_lis =[path_1]
+linea_credito(previous_date, path_lis)
+
+#crawler()
+
+
+# In[10]:
+
+
+crawler()
+
