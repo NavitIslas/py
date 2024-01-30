@@ -1,0 +1,93 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Poner headers a las tablas finales del credit limit
+
+# ## Importar librerias
+
+# In[1]:
+
+
+import pandas as pd
+import awswrangler as wr
+import numpy as np
+from datetime import datetime
+import awswrangler as wr
+import pandas as pd
+import calendar
+import datetime
+from datetime import datetime
+from datetime import date
+import pytz
+from datetime import timedelta
+from dateutil.relativedelta import relativedelta
+import boto3
+from botocore.exceptions import ClientError
+
+
+# ## Obtener nombre del archivo para mandar el archivo a parquet
+
+# In[9]:
+
+
+path='s3://desarrollos-bigdata-inovacion-us-east-1/SAS/CREDIT_LIMIT/rawdata/FM_CREDIT_LIMIT_31DEC2023.csv'
+nombre=path[70:-4]
+print(nombre)
+
+
+# ## Lectura del archivo en csv
+
+# In[10]:
+
+
+df = pd.read_csv(f'{path}',sep=',',header=None,dtype={1:str})
+df.head()
+
+
+# ## Ponerle los nombres a las columnas
+
+# In[11]:
+
+
+df.columns=['ACCOUNT_RK','NUMERO_CUENTA','SCORECARD_BIN','SCORE','EDAD_CUENTA','PROBABILITY','CREDIT_LIMIT_MDL',
+            'CREDIT_LIMIT_MDL_TOP_OFF','CREDIT_LIMIT_FNL','CREDIT_LIMIT_FNL_TOP_OFF','SCORING_AS_OF_DTTM']
+df.head()
+
+
+# ## Enviar el archivo a S3 en formato parquet
+
+# In[12]:
+
+
+df.to_parquet(f's3://desarrollos-bigdata-inovacion-us-east-1/SAS/CREDIT_LIMIT/credit_limit/20231231/{nombre}.parquet')
+
+
+# ## Correr crawler
+
+# In[13]:
+
+
+# Initialize a Boto3 Glue client
+glue_client = boto3.client('glue', region_name='us-east-1')
+
+# Replace 'your-crawler-name' with the name of your Glue Crawler
+crawler_name = 'Linea_Credito__c'
+
+# Start the Glue Crawler
+response = glue_client.start_crawler(Name=crawler_name)
+
+# Print the response or handle it as needed
+print(response)
+
+
+# In[7]:
+
+
+df['CREDIT_LIMIT_FNL_TOP_OFF'].describe()
+
+
+# In[ ]:
+
+
+
+
