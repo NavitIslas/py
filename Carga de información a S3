@@ -1,0 +1,145 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Carga de información a S3
+
+# ## Importar librerias
+
+# In[1]:
+
+
+import pandas as pd
+import awswrangler as wr
+import numpy as np
+from datetime import datetime
+import awswrangler as wr
+import pandas as pd
+import calendar
+import datetime
+from datetime import datetime
+from datetime import date
+import pytz
+from datetime import timedelta
+from dateutil.relativedelta import relativedelta
+import boto3
+from botocore.exceptions import ClientError
+
+
+# ## Lectura del archivo en txt
+
+# In[ ]:
+
+
+dfbajas = pd.read_csv('ACT_LC_RESUMEN.txt',sep='|',dtype={'cuenta':str})
+dfbajas.head()
+
+
+# In[ ]:
+
+
+dfbajas
+
+
+# ## Enviar el archivo a S3 en formato parquet
+
+# In[ ]:
+
+
+dfbajas.to_parquet('s3://desarrollos-bigdata-inovacion-us-east-1/Navit/actualizar_lc/20231003/actualizar_lc_20231003.parquet')
+
+
+# ## Lectura base Ingrid
+
+# In[3]:
+
+
+dfbajas = pd.read_excel('/home/ec2-user/SageMaker/Navit/Carga de información a S3/CUENTAS_CC_PDF.xlsx',dtype={'CUENTAS':str})
+dfbajas
+
+
+# In[ ]:
+
+
+dfbajas.count()[0]
+
+
+# In[ ]:
+
+
+
+
+
+# In[ ]:
+
+
+dfbajas.info()
+
+
+# In[ ]:
+
+
+headers=['cuenta','vobo','detalle']
+dfbajas.columns=headers
+
+
+# In[ ]:
+
+
+dfbajas.info()
+
+
+# In[4]:
+
+
+dfbajas.to_parquet('s3://desarrollos-bigdata-inovacion-us-east-1/SAS/sas94/cuentasae_ingrid/cuentas_ae.parquet')
+
+
+# In[ ]:
+
+
+s3://desarrollos-bigdata-inovacion-us-east-1/SAS/sas94/cuentasae_ingrid/
+
+
+# In[ ]:
+
+
+dfbajas['FECHA_CARGO'] = pd.to_datetime(dfbajas['FECHA_CARGO'], format='%Y-%m-%d %H:%M:%S.000')
+
+
+# In[ ]:
+
+
+dfbajas['FECHA_ALTA'] = pd.to_datetime(dfbajas['FECHA_ALTA'], format='%Y-%m-%d %H:%M:%S.000')
+
+
+# ## Enviar el archivo a S3 en formato parquet
+
+# In[ ]:
+
+
+dfbajas.to_parquet('s3://desarrollos-bigdata-inovacion-us-east-1/SAS/sas94/dev_contracargos/20231018/contracargos_20231018.parquet')
+
+
+# ## Correr crawler
+
+# In[ ]:
+
+
+# Initialize a Boto3 Glue client
+glue_client = boto3.client('glue', region_name='us-east-1')
+
+# Replace 'your-crawler-name' with the name of your Glue Crawler
+crawler_name = 'contrcargos_descartes_SAS_crawler'
+
+# Start the Glue Crawler
+response = glue_client.start_crawler(Name=crawler_name)
+
+# Print the response or handle it as needed
+print(response)
+
+
+# In[ ]:
+
+
+
+
