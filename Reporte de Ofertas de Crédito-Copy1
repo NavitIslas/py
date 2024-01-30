@@ -1,0 +1,1285 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # Reporte de Ofertas de Crédito
+
+# ## Instalar librerias
+
+# In[1]:
+
+
+pip install python-pptx
+
+
+# ## Importar librerias
+
+# In[2]:
+
+
+import numpy as np
+from datetime import datetime
+import awswrangler as wr
+import pandas as pd
+import calendar
+import datetime
+from datetime import datetime
+from datetime import date
+import pytz
+from datetime import timedelta
+from dateutil.relativedelta import relativedelta
+import boto3
+from botocore.exceptions import ClientError
+from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE
+from pptx.util import Inches
+import plotly.express as px
+import pandas as pd
+from pandas_profiling import ProfileReport
+import warnings
+warnings.filterwarnings('ignore')
+
+
+# ## Conexiones a redshift
+
+# In[3]:
+
+
+con_redshift_2 = wr.redshift.connect("redshift_cctp_inovation")# cluster cctp-prod
+conn = wr.redshift.connect("redshift_devsie")#cluster devise
+cursor=conn.cursor()
+
+
+# ## Obtener la fecha del día vencido en el formato 20230910
+
+# In[4]:
+
+
+# Set the time zone to Mexico City
+mexico_timezone = pytz.timezone('America/Mexico_City')
+
+# Get the current datetime in Mexico City
+current_datetime = datetime.now(mexico_timezone)
+
+# Extract the date
+current_date = current_datetime.date()
+previous_date=current_datetime.date() - relativedelta(days=1)
+date_cuchareada = current_datetime.date() - relativedelta(days=1)
+#Convert the datetime object back to a formatted string
+previous_date= previous_date.strftime("%Y%m%d")
+date_cuchareada = date_cuchareada.strftime("%Y%m%d")
+
+# Corvert the datetimes to a formated int 
+previous_date = int(previous_date)
+#date_cuchareada =int(date_cuchareada)
+date_cuchareada = previous_date
+
+# Print the result in a formatted way
+print("día vencido:",previous_date )
+print("Fecha cuchareada:",date_cuchareada )
+
+
+# ## Obtener la fecha a día vencido en el formato '20230910'
+
+# In[5]:
+
+
+# ### Obtener fecha a día vencido para filtrar la fecha de la tabla
+
+# In[8]:
+
+
+# Set the time zone to Mexico City
+mexico_timezone = pytz.timezone('America/Mexico_City')
+
+# Get the current datetime in Mexico City
+current_datetime = datetime.now(mexico_timezone)
+
+# Extract the date
+current_date = current_datetime.date()
+
+current_date=current_datetime.date() - relativedelta(days=1)
+
+
+current_date = datetime.combine(current_date, datetime.min.time())
+
+
+# Convert the datetime object back to a formatted string
+current_date = current_date.strftime("'%Y%m%d'")
+
+# Print the result in a formatted way
+print("Día vencido:",current_date )
+
+
+# ## Cambiar partition_0 por variable dinamica a día vencido
+
+# In[6]:
+
+
+def LCD_SASSLF(previous_date):
+    query = f"""Create table public.LCD_SASSLF_{previous_date} as (
+                select
+                cuenta,
+                limite_de_credito__c,
+                estatus__c,
+                tienda__c,
+                proveedor__c,
+                fecha
+                FROM (
+                    SELECT 
+                       "cuenta_factura__r.idcuentabrm__c" as cuenta, 
+                       limite_de_credito__c,
+                       estatus__c,
+                       tienda__c,
+                       proveedor__c,
+                        TO_TIMESTAMP(createddate, 'DD/MM/YYYY HH:MI AM') AS fecha, 
+                        ROW_NUMBER() OVER (PARTITION BY cuenta ORDER BY TO_TIMESTAMP(createddate, 'DD/MM/YYYY HH:MI AM') DESC) AS row_num
+                from data_lake.linea_credito__c where partition_0 = (SELECT MAX(partition_0)
+                                                                     FROM data_lake.linea_credito__c)
+                ) ranked
+                WHERE row_num = 1
+                order by cuenta desc);"""
+
+    conn = wr.redshift.connect("redshift_devsie")
+
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        cursor.execute("commit;")
+
+    conn.close()
+
+
+# In[7]:
+
+
+# query = f"""drop table public.LCD_SASSLF_OFERTA_CF_{previous_date};"""
+
+# conn = wr.redshift.connect("redshift_devsie")
+
+# with conn.cursor() as cursor:
+#     cursor.execute(query)
+#     cursor.execute("commit;")
+
+# conn.close()
+
+
+# ## Unload de la tabla public.LCD_SASSLF_{previous_date}
+
+# In[8]:
+
+
+def unload_LCD_SASSLF(previous_date):
+    query = f"""unload ($$
+                            select * 
+                            from public.LCD_SASSLF_{previous_date}
+                            $$
+                            )
+                            TO 's3://desarrollos-bigdata-inovacion-us-east-1/SAS/sas94/lc_resumen/{previous_date}/lc_resumen_{previous_date}.parquet'
+                            IAM_ROLE 'arn:aws:iam::903746939682:role/ReadTP'
+                            FORMAT PARQUET
+                            PARALLEL OFF;
+            """
+
+    conn = wr.redshift.connect("redshift_devsie")
+
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        cursor.execute("commit;")
+
+    conn.close()
+
+
+# ## Correr el crawler Linea_Credito__c
+
+# In[9]:
+
+
+def crawler():
+    # ## Correr Crawler Linea_Credito__c
+
+    # In[5]:
+
+
+    # Initialize a Boto3 Glue client
+    glue_client = boto3.client('glue', region_name='us-east-1')
+
+    # Replace 'your-crawler-name' with the name of your Glue Crawler
+    crawler_name = 'Linea_Credito__c'
+
+    # Start the Glue Crawler
+    response = glue_client.start_crawler(Name=crawler_name)
+
+    # Print the response or handle it as needed
+    print(response)
+
+
+# In[10]:
+
+
+def LCD_SASSLF_OFERTA(previous_date, date_cuchareada):
+    query = f"""create table  public.LCD_SASSLF_OFERTA_{previous_date} as ( 
+                                select
+                                a.cuenta,
+                                a.score,
+                                a.estatus_cta,
+                                b.facescan,
+                                b.identificacion,
+                                case 
+                                   when c.cuenta is not null then 'con_oferta' else 'sin_oferta' end as oferta
+                                from(
+                                   select
+                                      cuenta,
+                                      score ,
+                                      ciclo ,
+                                      atraso ,
+                                      morosidad,
+                                      estatus_cta
+                                   from black_box.cartera
+                                   where info_day = {previous_date} and estatus_cta = 'Activo') as a
+                                left join (
+                                   select
+                                      numero_de_cuenta,
+                                      facescan,
+                                      identificacion
+                                   from data_lake.funnel_adopcion_extract
+                                    where info_day = {date_cuchareada})as  b
+                                on a.cuenta = b.numero_de_cuenta
+                                left join (
+                                    select cuenta 
+                                    from data_lake.lc_resumen
+                                    where estatus__c = 'true' 
+                                          and proveedor__c = 'FISERV'
+                                          and partition_0=(select max(partition_0)
+                                                           from data_lake.lc_resumen)) as c
+                                on a.cuenta = c.cuenta
+                                group by 
+                                    a.cuenta,
+                                    a.score,
+                                    a.estatus_cta,
+                                    b.facescan,
+                                    b.identificacion, 
+                                    oferta
+                                );"""
+
+    conn = wr.redshift.connect("redshift_devsie")
+
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        cursor.execute("commit;")
+
+    conn.close()
+
+
+# In[11]:
+
+
+def LCD_SASSLF_OFERTA_CF(previous_date):
+    query = f"""create table public.LCD_SASSLF_OFERTA_CF_{previous_date} as(
+    select *
+    from public.LCD_SASSLF_OFERTA_{previous_date}
+    where facescan=1 and identificacion=1
+    union 
+    select *
+    from public.LCD_SASSLF_OFERTA_{previous_date}
+    where facescan=1 and identificacion=0
+          and cuenta not in ( select cuenta
+                          from public.LCD_SASSLF_OFERTA_{previous_date}
+                          where facescan=1 and identificacion=1)
+    union
+    select *
+    from public.LCD_SASSLF_OFERTA_{previous_date}
+    where facescan=0 and identificacion=1
+          and cuenta not in (select cuenta
+                          from public.LCD_SASSLF_OFERTA_{previous_date}
+                          where facescan=1 and identificacion=0
+                                and cuenta not in ( select cuenta
+                                                from public.LCD_SASSLF_OFERTA_{previous_date}
+                                                where facescan=1 and identificacion=1))
+          and cuenta not in ( select cuenta
+                          from public.LCD_SASSLF_OFERTA_{previous_date}
+                          where facescan=1 and identificacion=1)
+    union
+    select *
+    from public.LCD_SASSLF_OFERTA_{previous_date}
+    where cuenta not in (select cuenta
+                          from public.LCD_SASSLF_OFERTA_{previous_date}
+                          where facescan=1 and identificacion=0
+                                and cuenta not in ( select cuenta
+                                                from public.LCD_SASSLF_OFERTA_{previous_date}
+                                                where facescan=1 and identificacion=1))
+          and cuenta not in ( select cuenta
+                          from public.LCD_SASSLF_OFERTA_{previous_date}
+                          where facescan=1 and identificacion=1)
+          and cuenta not in (select cuenta
+                              from public.LCD_SASSLF_OFERTA_{previous_date}
+                              where facescan=0 and identificacion=1
+                                    and cuenta not in (select cuenta
+                                                      from public.LCD_SASSLF_OFERTA_{previous_date}
+                                                      where facescan=1 and identificacion=0
+                                                            and cuenta not in ( select cuenta
+                                                                          from public.LCD_SASSLF_OFERTA_{previous_date}
+                                                                          where facescan=1 and identificacion=1))
+                                    and cuenta not in ( select cuenta
+                                                        from public.LCD_SASSLF_OFERTA_{previous_date}
+                                                        where facescan=1 and identificacion=1))
+    );"""
+
+    conn = wr.redshift.connect("redshift_devsie")
+
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        cursor.execute("commit;")
+
+    conn.close()
+
+
+# ## Cifras del reporte
+
+# ### Total de cuentas en la base
+
+# In[12]:
+
+
+def Total_cuentas(previous_date):
+    query = f"""select count(cuenta)
+                from public.LCD_SASSLF_OFERTA_CF_{previous_date};"""
+    conn = wr.redshift.connect("redshift_devsie")
+    df1 = wr.redshift.read_sql_query(query, conn)
+    #print(f"Total de cuentas en la base = {df1['count'][0]}")
+    return(df1['count'][0])
+
+
+# ### solo facescan Total
+
+# In[13]:
+
+
+def Total_cuentas_facescan(previous_date):
+    query = f"""select count(cuenta)
+                from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+                where facescan=1 and identificacion=0;"""
+    conn = wr.redshift.connect("redshift_devsie")
+    dfT_1 = wr.redshift.read_sql_query(query, conn)
+    #print(f"solo facescan Total = {dfT_1['count'][0]}")
+    return(dfT_1['count'][0])
+
+
+# ### adopcion digital completa Total
+
+# In[14]:
+
+
+def Total_cuentas_ad(previous_date):
+    query = f"""select count(cuenta)
+                from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+                where facescan=1 and identificacion=1;"""
+    conn = wr.redshift.connect("redshift_devsie")
+    dfT_2 = wr.redshift.read_sql_query(query, conn)
+    #print(f"adopcion digital completa Total = {dfT_2['count'][0]}")
+    return(dfT_2['count'][0])
+
+
+# ### facescan 0 e identificación 1 Total
+
+# In[15]:
+
+
+def Total_cuentas_ine(previous_date):
+    query = f"""select count(cuenta)
+                from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+                where facescan=0 and identificacion=1;"""
+    conn = wr.redshift.connect("redshift_devsie")
+    dfT_3 = wr.redshift.read_sql_query(query, conn)
+    #print(f"facescan 0 e identificación 1 Total = {dfT_3['count'][0]}")
+    return(dfT_3['count'][0])
+
+
+# ### facescan 0 e identificación 0 Total
+
+# In[16]:
+
+
+def Total_cuentas_fa0_in0(previous_date):
+    query = f"""select count(cuenta)
+                from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+                where facescan=0 and identificacion=0;"""
+    conn = wr.redshift.connect("redshift_devsie")
+    dfT_4 = wr.redshift.read_sql_query(query, conn)
+    #print(f"facescan 0 e identificación 0 Total = {dfT_4['count'][0]}")
+    return(dfT_4['count'][0])
+
+
+# ### facescan null e identificación 0 Total
+
+# In[17]:
+
+
+def Total_cuentas_fanull_in0(previous_date):
+    query = f"""select count(cuenta)
+                from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+                where facescan is null and identificacion=0;"""
+    conn = wr.redshift.connect("redshift_devsie")
+    dfT_5 = wr.redshift.read_sql_query(query, conn)
+    #print(f"facescan null e identificación 0 Total = {dfT_5['count'][0]}")
+    return(dfT_5['count'][0])
+
+
+# ### facescan null e identificación 1 Total
+
+# In[18]:
+
+
+def Total_cuentas_fanull_in1(previous_date):
+    query = f"""select count(cuenta)
+                from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+                where facescan is null and identificacion=1;"""
+    conn = wr.redshift.connect("redshift_devsie")
+    dfT_6 = wr.redshift.read_sql_query(query, conn)
+    #print(f"facescan null e identificación 1 Total = {dfT_6['count'][0]}")
+    return(dfT_6['count'][0])
+
+
+# ### facescan null e identificación null Total
+
+# In[19]:
+
+
+def Total_cuentas_fanull_innull(previous_date):
+    query = f"""select count(cuenta)
+                from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+                where facescan is null and identificacion is null;"""
+    conn = wr.redshift.connect("redshift_devsie")
+    dfT_7 = wr.redshift.read_sql_query(query, conn)
+    #print(f"facescan null e identificación null Total = {dfT_7['count'][0]}")
+    return(dfT_7['count'][0])
+
+
+# ### facescan 0 e identificación null Total
+
+# In[20]:
+
+
+def Total_cuentas_fa0_innull(previous_date):
+    query = f"""select count(cuenta)
+                from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+                where facescan=0 and identificacion is null;"""
+    conn = wr.redshift.connect("redshift_devsie")
+    dfT_8 = wr.redshift.read_sql_query(query, conn)
+    #print(f"facescan 0 e identificación null Total = {dfT_8['count'][0]}")
+    return(dfT_8['count'][0])
+
+
+# ### facescan 1 e identificación null Total
+
+# In[21]:
+
+
+def Total_cuentas_fa1_innull(previous_date):
+    query = f"""select count(cuenta)
+    from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+    where facescan=1 and identificacion is null;"""
+    conn = wr.redshift.connect("redshift_devsie")
+    df_9 = wr.redshift.read_sql_query(query, conn)
+    #print(f"facescan 1 e identificación null Total = {df_9['count'][0]}")
+    return(dfT_9['count'][0])
+
+
+# ### Cuentas en la base con oferta
+
+# In[22]:
+
+
+def Cuentas(previous_date, oferta:str):
+    query = f"""select count(cuenta)
+                from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+                where oferta={oferta};"""
+    conn = wr.redshift.connect("redshift_devsie")
+    df2 = wr.redshift.read_sql_query(query, conn)
+    #print(f"Cuentas en la base con oferta = {df2['count'][0]}")
+    return(df2['count'][0])
+
+
+# ### Cuentas en la base sin oferta
+
+# In[23]:
+
+
+# query = f"""select count(cuenta)
+#             from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+#             where oferta='sin_oferta';"""
+# conn = wr.redshift.connect("redshift_devsie")
+# df3 = wr.redshift.read_sql_query(query, conn)
+# print(f"Cuentas en la base sin oferta = {df3['count'][0]}")
+
+
+# ### solo facescan con oferta
+
+# In[24]:
+
+
+def Cuentas_facescan(previous_date, oferta):
+    query = f"""select count(cuenta)
+                from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+                where facescan=1 and identificacion=0 and oferta={oferta};"""
+    conn = wr.redshift.connect("redshift_devsie")
+    df4 = wr.redshift.read_sql_query(query, conn)
+    #print(f"solo facescan con oferta = {df4['count'][0]}")
+    return(df4['count'][0])
+
+
+# ### adopcion digital completa con oferta
+
+# In[25]:
+
+
+def Cuentas_ad(previous_date, oferta):
+    query = f"""select count(cuenta)
+                from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+                where facescan=1 and identificacion=1 and oferta={oferta};"""
+    conn = wr.redshift.connect("redshift_devsie")
+    df5 = wr.redshift.read_sql_query(query, conn)
+    #print(f"adopcion digital completa con oferta = {df5['count'][0]}")
+    return(df5['count'][0])
+
+
+# ### facescan 0 e identificación 1 con oferta
+
+# In[26]:
+
+
+def Cuentas_ine(previous_date, oferta):
+    query = f"""select count(cuenta)
+                from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+                where facescan=0 and identificacion=1 and oferta={oferta};"""
+    conn = wr.redshift.connect("redshift_devsie")
+    df6 = wr.redshift.read_sql_query(query, conn)
+    #print(f"facescan 0 e identificación 1 con oferta = {df6['count'][0]}")
+    return(df6['count'][0])
+
+
+# ### facescan 0 e identificación 0 con oferta
+
+# In[27]:
+
+
+def Cuentas_fa0_in0(previous_date, oferta):
+    query = f"""select count(cuenta)
+                from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+                where facescan=0 and identificacion=0 and oferta={oferta};"""
+    conn = wr.redshift.connect("redshift_devsie")
+    df7 = wr.redshift.read_sql_query(query, conn)
+    #print(f"facescan 0 e identificación 0 con oferta = {df7['count'][0]}")
+    return(df7['count'][0])
+
+
+# ### facescan null e identificación 0 con oferta
+
+# In[28]:
+
+
+def Cuentas_fanull_in0(previous_date, oferta):
+    query = f"""select count(cuenta)
+                from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+                where facescan is null and identificacion=0 and oferta={oferta};"""
+    conn = wr.redshift.connect("redshift_devsie")
+    df8 = wr.redshift.read_sql_query(query, conn)
+    #print(f"facescan null e identificación 0 con oferta = {df8['count'][0]}")
+    return(df8['count'][0])
+
+
+# ## facescan null e identificación 1 con oferta
+
+# In[29]:
+
+
+def Cuentas_fanull_in1(previous_date, oferta):
+    query = f"""select count(cuenta)
+                from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+                where facescan is null and identificacion=1 and oferta={oferta};"""
+    conn = wr.redshift.connect("redshift_devsie")
+    df9 = wr.redshift.read_sql_query(query, conn)
+    #print(f"facescan null e identificación 1 con oferta = {df9['count'][0]}")
+    return(df9['count'][0])
+
+
+# ### facescan null e identificación null con oferta
+
+# In[30]:
+
+
+def Cuentas_fanull_innull(previous_date, oferta):
+    query = f"""select count(cuenta)
+                from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+                where facescan is null and identificacion is null and oferta={oferta};"""
+    conn = wr.redshift.connect("redshift_devsie")
+    df10 = wr.redshift.read_sql_query(query, conn)
+    #print(f"facescan null e identificación null con oferta = {df10['count'][0]}")
+    return(df10['count'][0])
+
+
+# ### facescan 0 e identificación null con oferta
+
+# In[31]:
+
+
+def Cuentas_fa0_innull(previous_date, oferta):
+    query = f"""select count(cuenta)
+                from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+                where facescan=0 and identificacion is null and oferta={oferta};"""
+    conn = wr.redshift.connect("redshift_devsie")
+    df11 = wr.redshift.read_sql_query(query, conn)
+    #print(f"facescan 0 e identificación null con oferta = {df11['count'][0]}")
+    return(df11['count'][0])
+
+
+# ### facescan 1 e identificación null con oferta 
+
+# In[32]:
+
+
+def Cuentas_fa1_innull(previous_date, oferta):
+    query = f"""select count(cuenta)
+    from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+    where facescan=1 and identificacion is null and oferta={oferta};"""
+    conn = wr.redshift.connect("redshift_devsie")
+    df12 = wr.redshift.read_sql_query(query, conn)
+    #print(f"facescan 1 e identificación null con oferta = {df12['count'][0]}")
+    return(df12['count'][0])
+
+
+# ### Cuentas repetidas en la base con oferta
+
+# In[33]:
+
+
+def Cuentas_repetidas(previous_date, oferta):
+    query = f"""select cuenta, count(cuenta)
+                from LCD_SASSLF_OFERTA_CF_{previous_date}
+                where oferta={oferta}
+                group by cuenta
+                having count(cuenta)>1;"""
+    conn = wr.redshift.connect("redshift_devsie")
+    df13 = wr.redshift.read_sql_query(query, conn)
+    #print(f"Cuentas repetidas en la base con oferta = {df13['count'].sum()}")
+    return(df13['count'][0])
+
+
+# ### Cuentas repetidas en la base sin oferta
+
+# In[34]:
+
+
+# query = f"""select cuenta, count(cuenta)
+#             from LCD_SASSLF_OFERTA_CF_{previous_date}
+#             where oferta='sin_oferta'
+#             group by cuenta
+#             having count(cuenta)>1;"""
+# conn = wr.redshift.connect("redshift_devsie")
+# df14 = wr.redshift.read_sql_query(query, conn)
+# print(f"Cuentas repetidas en la base sin oferta = {df14['count'].sum()}")
+
+
+# ### solo facescan sin oferta
+
+# In[35]:
+
+
+# query = f"""select info_day
+#             from data_staging.ta_slf_case 
+#             group by info_day
+#             order by info_day
+#             limit 10;"""
+# conn = wr.redshift.connect("redshift_devsie")
+# df15 = wr.redshift.read_sql_query(query, conn)
+# df15
+
+
+# ### adopcion digital completa sin oferta
+
+# In[36]:
+
+
+# query = f"""select count(cuenta)
+#             from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+#             where facescan=1 and identificacion=1 and oferta='sin_oferta';"""
+# conn = wr.redshift.connect("redshift_devsie")
+# df16 = wr.redshift.read_sql_query(query, conn)
+# print(f"adopcion digital completa sin oferta = {df16['count'][0]}")
+
+
+# ### facescan 0 e identificación 1 sin oferta
+
+# In[37]:
+
+
+# query = f"""select count(cuenta)
+#             from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+#             where facescan=0 and identificacion=1 and oferta='sin_oferta';"""
+# conn = wr.redshift.connect("redshift_devsie")
+# df17 = wr.redshift.read_sql_query(query, conn)
+# print(f"facescan 0 e identificación 1 sin oferta = {df17['count'][0]}")
+
+
+# ### facescan 0 e identificación 0 sin oferta
+
+# In[38]:
+
+
+# query = f"""select count(cuenta)
+#             from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+#             where facescan=0 and identificacion=0 and oferta='sin_oferta';"""
+# conn = wr.redshift.connect("redshift_devsie")
+# df18 = wr.redshift.read_sql_query(query, conn)
+# print(f"facescan 0 e identificación 0 sin oferta = {df18['count'][0]}")
+
+
+# ### facescan null e identificación 0 sin oferta
+
+# In[39]:
+
+
+# query = f"""select count(cuenta)
+#             from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+#             where facescan is null and identificacion=0 and oferta='sin_oferta';"""
+# conn = wr.redshift.connect("redshift_devsie")
+# df19 = wr.redshift.read_sql_query(query, conn)
+# print(f"facescan null e identificación 0 sin oferta = {df19['count'][0]}")
+
+
+# ### facescan null e identificación 1 sin oferta
+
+# In[40]:
+
+
+# query = f"""select count(cuenta)
+#             from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+#             where facescan is null and identificacion=1 and oferta='sin_oferta';"""
+# conn = wr.redshift.connect("redshift_devsie")
+# df20 = wr.redshift.read_sql_query(query, conn)
+# print(f"facescan null e identificación 1 sin oferta = {df20['count'][0]}")
+
+
+# ### facescan null e identificación null sin oferta
+
+# In[41]:
+
+
+# query = f"""select count(cuenta)
+#             from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+#             where facescan is null and identificacion is null and oferta='sin_oferta';"""
+# conn = wr.redshift.connect("redshift_devsie")
+# df21 = wr.redshift.read_sql_query(query, conn)
+# print(f"facescan null e identificación null sin oferta = {df21['count'][0]}")
+
+
+# ### facescan 0 e identificación null sin oferta
+
+# In[42]:
+
+
+# query = f"""select count(cuenta)
+#             from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+#             where facescan=0 and identificacion is null and oferta='sin_oferta';"""
+# conn = wr.redshift.connect("redshift_devsie")
+# df22 = wr.redshift.read_sql_query(query, conn)
+# print(f"facescan 0 e identificación null sin oferta = {df22['count'][0]}")
+
+
+# ### facescan 1 e identificación null sin oferta
+
+# In[43]:
+
+
+# query = f"""select count(cuenta)
+#             from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+#             where facescan=1 and identificacion is null and oferta='sin_oferta';"""
+# conn = wr.redshift.connect("redshift_devsie")
+# df23 = wr.redshift.read_sql_query(query, conn)
+# print(f"facescan 1 e identificación null sin oferta = {df23['count'][0]}")
+
+
+# ### NOTA: En caso de que haya cuentas que tienen oferta de credito y no llegan a aparecer en la base LCD_SASSLF_OFERTA_CF_{previous_date} ,para ver porque razón no se estan considerando en la base, y poder observar que estatus tienen en blacK_box.cartera y si son cuentas VIP.
+
+# In[44]:
+
+
+def cuentas_faltantes(previous_date,current_date):
+    query = f"""select a.cuenta, a.estatus_cta, b.VIP, a.info_day 
+                from(
+                (select cuenta, estatus_cta, info_day
+                from black_box.cartera
+                where cuenta in (select cuenta 
+                                   from data_lake.lc_resumen 
+                                   where partition_0 ={previous_date} 
+                                         and estatus__c = 'true' 
+                                         and proveedor__c = 'FISERV')
+                                         and cuenta not in (select cuenta 
+                                                            from black_box.cartera 
+                                                            where  info_day={previous_date}  
+                                                                   and estatus_cta = 'Activo') 
+                      and info_day ={previous_date}) as a
+                left join (select cuenta,
+                                  'VIP_SHOP' as VIP
+                           from dev_tps_int.tps_cuentasetiquetadas) as b 
+                on a.cuenta=b.cuenta);
+             """
+    conn = wr.redshift.connect("redshift_devsie")
+    df24 = wr.redshift.read_sql_query(query, conn)
+
+    # Mandar las cuentas a excel
+    df24.to_excel(f'/home/ec2-user/SageMaker/Navit/Reporte ofertas de Credito/Excel cuentas faltantes/Cuentas_faltantes_{previous_date}.xlsx')
+
+
+# ### Crea una tabla de las cuentas que tienen facescan null e ine null de la base public.LCD_SASSLF_OFERTA_CF_{previous_date} y la deposita como csv con el nombre face_ine_null_{previous_date}.csv
+
+# In[45]:
+
+
+# query = f"""select *
+#             from public.LCD_SASSLF_OFERTA_CF_{previous_date}
+#             where facescan is null and identificacion is null and oferta='con_oferta';
+#          """
+# conn = wr.redshift.connect("redshift_devsie")
+# df25 = wr.redshift.read_sql_query(query, conn)
+
+
+# In[46]:
+
+
+# df25.to_csv(f'/home/ec2-user/SageMaker/Navit/Reporte ofertas de Credito/face_ine_null_{previous_date}.csv')
+
+
+# ## Crear diapositiva en Powerpoint
+
+# ### Crear una nueva presentación
+
+# In[47]:
+
+
+# prs = Presentation()
+
+
+# ### Agregar titulo a la diapositiva
+
+# In[48]:
+
+
+# title_slide_layout = prs.slide_layouts[0]
+# slide = prs.slides.add_slide(title_slide_layout)
+# title = slide.shapes.title
+# title.text = f"""Reporte de Ofertas de Crédito {previous_date}"""
+
+
+# ### Agregar contenido a la diapositiva
+
+# In[49]:
+
+
+# content_slide_layout = prs.slide_layouts[5]  # Use the desired layout for content slides
+
+# # Create a content slide
+# slide = prs.slides.add_slide(content_slide_layout)
+
+# # Add a title to the content slide (optional)
+# title = slide.shapes.title
+# title.text = f"""Total de cuentas: {df1['count'][0]}"""
+
+# # Add text to the slide
+# left = Inches(1)
+# top = Inches(1.5)
+# width = Inches(10)
+# height = Inches(3)
+# text_box = slide.shapes.add_textbox(left, top, width, height)
+# text_frame = text_box.text_frame
+
+# # Add paragraphs to the text box
+# p = text_frame.add_paragraph()
+# p.text = f"""
+# Solo facescan = {dfT_1['count'][0]}
+# Adopción completa = {dfT_2['count'][0]}
+# Solo identificación = {dfT_3['count'][0]}
+# Sin Facescan y sin Identificación = {dfT_4['count'][0]}
+# Facescan null e ine null = {dfT_7['count'][0]}
+
+
+# Solo facescan = {dfT_1['count'][0] + dfT_3['count'][0] +  dfT_4['count'][0] + dfT_7['count'][0]}
+# Adopción completa = {dfT_2['count'][0]}
+
+# """
+
+# # You can add more content to the slide as needed, such as images or charts
+
+
+# In[50]:
+
+
+# content_slide_layout = prs.slide_layouts[5]  # Use the desired layout for content slides
+
+# # Create a content slide
+# slide = prs.slides.add_slide(content_slide_layout)
+
+# # Add a title to the content slide (optional)
+# title = slide.shapes.title
+# title.text = f"""Total de cuentas: {df1['count'][0]}"""
+
+# # Add text to the slide
+# left = Inches(1)
+# top = Inches(1.5)
+# width = Inches(10)
+# height = Inches(3)
+# text_box = slide.shapes.add_textbox(left, top, width, height)
+# text_frame = text_box.text_frame
+
+# # Add paragraphs to the text box
+# p = text_frame.add_paragraph()
+# p.text = f"""Con oferta = {df2['count'][0]}                                     Sin oferta = {df3['count'][0]}
+# Solo facescan = {df4['count'][0]}                                  Solo facescan = {df15['count'][0]}
+# Adopción completa = {df5['count'][0]}                       Adopción completa = {df16['count'][0]}
+# Solo identificación = {df6['count'][0]}                                Solo identificación = {df17['count'][0]}
+# Sin Facescan y sin Identificación = {df7['count'][0]}     Sin Facescan y sin Identificación = {df18['count'][0]}
+# Facescan null e ine null = {df10['count'][0]}                    Facescan null e ine null = {df21['count'][0]}
+
+
+
+# Con oferta = {df2['count'][0]}                                      Sin oferta = {df3['count'][0]}
+# Solo facescan = {df4['count'][0] + df6['count'][0] + df7['count'][0] + df10['count'][0]}                                    Solo facescan = {df15['count'][0] + df17['count'][0]}
+# Adopción completa = {df5['count'][0]}                          Adopción completa = {df16['count'][0]}
+#                                                                             Solo identificación = {df17['count'][0]}
+#                                                                             Sin Facescan y sin Identificación = {df18['count'][0] + df21['count'][0]}
+# """
+
+# # You can add more content to the slide as needed, such as images or charts
+
+
+# ### Guardar la presentación de powerpoint
+
+# In[51]:
+
+
+# prs.save(f'/home/ec2-user/SageMaker/Navit/Reporte ofertas de Credito/Reporte_de_Ofertas_de_Crédito_{previous_date}.pptx')
+
+
+# ## Funcion para creacion de powerpoint
+
+# In[52]:
+
+
+def presentacion(previous_date):
+    ### Crear una nueva presentación
+    prs = Presentation()
+    
+    ### Agregar titulo a la diapositiva
+    title_slide_layout = prs.slide_layouts[0]
+    slide = prs.slides.add_slide(title_slide_layout)
+    title = slide.shapes.title
+    title.text = f"""Reporte de Ofertas de Crédito {previous_date}"""
+    
+    ### Agregar contenido de la primera diapositiva
+    
+    content_slide_layout = prs.slide_layouts[5]  # Use the desired layout for content slides
+    # Create a content slide
+    slide = prs.slides.add_slide(content_slide_layout)
+
+    # Add a title to the content slide (optional)
+    title = slide.shapes.title
+    title.text = f"""Total de cuentas: {Total_cuentas(previous_date)}"""
+
+    # Add text to the slide
+    left = Inches(1)
+    top = Inches(1.5)
+    width = Inches(10)
+    height = Inches(3)
+    text_box = slide.shapes.add_textbox(left, top, width, height)
+    text_frame = text_box.text_frame
+
+    # Add paragraphs to the text box
+    p = text_frame.add_paragraph()
+    p.text = f"""
+    Solo facescan = {Total_cuentas_facescan(previous_date)}
+    Adopción completa = {Total_cuentas_ad(previous_date)}
+    Solo identificación = {Total_cuentas_ine(previous_date)}
+    Sin Facescan y sin Identificación = {Total_cuentas_fa0_in0(previous_date)}
+    Facescan null e ine null = {Total_cuentas_fanull_innull(previous_date)}
+
+
+    Solo facescan = {Total_cuentas_facescan(previous_date) + Total_cuentas_ine(previous_date) +  Total_cuentas_fa0_in0(previous_date) + Total_cuentas_fanull_innull(previous_date)}
+    Adopción completa = {Total_cuentas_ad(previous_date)}
+
+    """
+    
+    ### Agregar contenido de la segunda diapositiva
+    
+    content_slide_layout = prs.slide_layouts[5]  # Use the desired layout for content slides
+
+    # Create a content slide
+    slide = prs.slides.add_slide(content_slide_layout)
+
+    # Add a title to the content slide (optional)
+    title = slide.shapes.title
+    title.text = f"""Total de cuentas: {Total_cuentas(previous_date)}"""
+
+    # Add text to the slide
+    left = Inches(1)
+    top = Inches(1.5)
+    width = Inches(10)
+    height = Inches(3)
+    text_box = slide.shapes.add_textbox(left, top, width, height)
+    text_frame = text_box.text_frame
+
+    # Add paragraphs to the text box
+    p = text_frame.add_paragraph()
+    p.text = f"""Con oferta = {Cuentas(previous_date,"'con_oferta'")}                                        Sin oferta = {Cuentas(previous_date,"'sin_oferta'")}
+    Solo facescan = {Cuentas_facescan(previous_date, "'con_oferta'")}                                  Solo facescan = {Cuentas_facescan(previous_date, "'sin_oferta'")}
+    Adopción completa = {Cuentas_ad(previous_date, "'con_oferta'")}                       Adopción completa = {Cuentas_ad(previous_date, "'sin_oferta'")}
+    Solo identificación = {Cuentas_ine(previous_date, "'con_oferta'")}                                Solo identificación = {Cuentas_ine(previous_date, "'sin_oferta'")}
+    Sin Facescan y sin Identificación = {Cuentas_fa0_in0(previous_date, "'con_oferta'")}           Sin Facescan y sin Identificación = {Cuentas_fa0_in0(previous_date, "'sin_oferta'")}
+    Facescan null e ine null = {Cuentas_fanull_innull(previous_date, "'con_oferta'")}                    Facescan null e ine null = {Cuentas_fanull_innull(previous_date, "'sin_oferta'")}
+
+
+
+    Con oferta = {Cuentas(previous_date,"'con_oferta'")}                                      Sin oferta = {Cuentas(previous_date,"'sin_oferta'")}
+    Solo facescan = {Cuentas_facescan(previous_date, "'con_oferta'") + Cuentas_ine(previous_date, "'con_oferta'") + Cuentas_fa0_in0(previous_date, "'con_oferta'") + Cuentas_fanull_innull(previous_date, "'con_oferta'")}                                    Solo facescan = {Cuentas_facescan(previous_date, "'sin_oferta'") + Cuentas_ine(previous_date, "'sin_oferta'")}
+    Adopción completa = {Cuentas_ad(previous_date, "'con_oferta'")}                          Adopción completa = {Cuentas_ad(previous_date, "'sin_oferta'")}
+                                                                                Sin Facescan y sin Identificación = {Cuentas_fa0_in0(previous_date, "'sin_oferta'") + Cuentas_fanull_innull(previous_date, "'sin_oferta'")}
+    """
+    
+    ### Guardar la presentación de powerpoint
+    prs.save(f'/home/ec2-user/SageMaker/Navit/Reporte ofertas de Credito/Powerpoint ofertas de credito/Reporte_de_Ofertas_de_Crédito_{previous_date}.pptx')
+
+
+# ## Historico de cuentas activas en blackbox a partir de 20230101
+
+# In[53]:
+
+
+# query = f"""select info_day, count(*) 
+#             from black_box.cartera 
+#             where  info_day >=20230101  and estatus_cta = 'Activo'
+#             group by info_day
+#             order by info_day ASC;"""
+# conn = wr.redshift.connect("redshift_devsie")
+# df = wr.redshift.read_sql_query(query, conn)
+
+
+# In[54]:
+
+
+# # Condicionamos que el conteo por info_day sea mayor a 4 millones para no considerar valores atipicos
+# df2 =df[df['count']>4000000]
+
+# # Data frame de pandas
+# fig = px.line(df2, x = 'info_day', y = 'count',
+#               title = "Linea del tiempo cuentas activas Blackbox",
+#               labels = {'x': 'info_day', 'y':'Total de cuentas'})
+
+# fig.show()
+
+
+# ## Intervalo de cuentas activas Blackbox
+
+# In[55]:
+
+
+# a = df2.describe()
+# inferior = a.loc['min']['count'] + 2*a.loc['std']['count']
+# superior = a.loc['max']['count'] + 2*a.loc['std']['count']
+# print(f' El intervalo de cuentas activas: ({round(inferior,2)},{round(superior,2)})')
+
+
+# ## Funcion para la generacion de reporte con profile de Blackbox.cartera
+
+# In[56]:
+
+
+def reporte(previous_date):
+    query = f"""select 
+                    cuenta,
+                    morosidad,
+                    atraso,
+                    segmento_atraso,
+                    estatus_cta,
+                    metodo_pago,
+                    desc_servicio
+                from black_box.cartera 
+                where  info_day ={previous_date} ;"""
+    conn = wr.redshift.connect("redshift_devsie")
+    df3 = wr.redshift.read_sql_query(query, conn)
+
+    ## Generacion de reporte con profile de Blackbox.cartera
+    profile= ProfileReport(df3, minimal=True)
+    profile.to_file(output_file=f'/home/ec2-user/SageMaker/Navit/Reporte ofertas de Credito/HTML ofertas de credito/Reporte_blackbox_cartera_{previous_date}.html')
+
+
+# ## Validacion del número de cuentas acorde al intervalo a dia vencido
+
+# In[57]:
+
+
+def validacion(previous_date):
+    ## Historico de cuentas activas en blackbox a partir de 20230101
+    query = f"""select info_day, count(*) 
+                from black_box.cartera 
+                where  info_day >=20230101  and estatus_cta = 'Activo'
+                group by info_day
+                order by info_day ASC;"""
+
+    conn = wr.redshift.connect("redshift_devsie")
+    df = wr.redshift.read_sql_query(query, conn)
+    df_blacbox=df['info_day'].max()
+
+    # Condicionamos que el conteo por info_day sea mayor a 4 millones para no considerar valores atipicos
+    df2 =df[df['count']>4000000]
+
+    
+    ## Historico de cuentas en data_lake.funnel_adopcion_extracta partir de 20230101
+    query2 = f"""select info_day, count(*) 
+                from data_lake.funnel_adopcion_extract 
+                where  info_day >=20230101
+                group by info_day
+                order by info_day ASC;"""
+
+    conn = wr.redshift.connect("redshift_devsie")
+    df3 = wr.redshift.read_sql_query(query2, conn)
+    df_funnel=df3['info_day'].max()
+
+    ## Validacion para saber si hay información a dia vencido de la base black_box.cartera
+    if df_blacbox==previous_date:
+        
+        ## Intervalo de cuentas activas Blackbox
+
+        a = df2.describe()
+        inferior = a.loc['min']['count'] + 2*a.loc['std']['count']
+        superior = a.loc['max']['count'] + 2*a.loc['std']['count']
+        #print(f' El intervalo de cuentas activas: ({round(inferior,2)},{round(superior,2)})')
+        df2=df2.set_index('info_day')
+        conteo_dvencido = df2['count'][previous_date]
+        ## Validacion del número de cuentas acorde al intervalo a dia vencido
+        
+        ## Validacion para saber si hay información a dia vencido de la base data_lake.funnel_adopcion_extract 
+        if df_funnel==date_cuchareada:
+            ## Intervalo de cuentas activas data_lake.funnel_adopcion_extract 
+
+            b = df3.describe()
+            inferior_funnel = b.loc['min']['count'] + 2*b.loc['std']['count']
+            superior_funnel = b.loc['max']['count'] + 2*b.loc['std']['count']
+            #print(f' El intervalo de cuentas activas: ({round(inferior,2)},{round(superior,2)})')
+            df3=df3.set_index('info_day')
+            conteo_dvencido_funnel = df3['count'][date_cuchareada]
+
+            if conteo_dvencido >= inferior and conteo_dvencido <= superior:
+                print(f'El día: {previous_date} de la base black_box.cartera, pasa validación del número de cuentas a día vencido')
+                if conteo_dvencido_funnel >= inferior_funnel and conteo_dvencido_funnel <= superior_funnel:
+                    print(f'El día: {date_cuchareada} de la base data_lake.funnel_adopcion_extract, pasa validación del número de cuentas a día vencido')
+                    #LCD_SASSLF(previous_date)
+                    print('Termino con funcion LCD_SASSLF')
+                    #unload_LCD_SASSLF(previous_date)
+                    print('Termino con funcion unload_LCD_SASSLF')
+                    #crawler()
+                    print('Termino de correrse el crawler Linea_Credito__c para la base lc_resumen')
+                    LCD_SASSLF_OFERTA(previous_date, date_cuchareada)
+                    print('Termino con funcion LCD_SASSLF_OFERTA')
+                    LCD_SASSLF_OFERTA_CF(previous_date)
+                    print('Termino con funcion LCD_SASSLF_OFERTA_CF')
+                    presentacion(previous_date)
+                    print('Termino con funcion presentacion')
+                    cuentas_faltantes(previous_date,current_date)
+                    print('Termino con cuentas faltantes')
+                    reporte(previous_date)
+                    print('Termino con funcion reporte')
+                else:
+                    print('No pasa validación del número de cuentas a día vencido')
+                    print(f'revisar el conteo de cuentas para el dia:{previous_date}')
+            else:
+                print('No pasa validación del número de cuentas a día vencido')
+                print(f'revisar el conteo de cuentas para el dia:{previous_date}')
+        else:
+            print(f'No hay información en la base data_lake.funnel_adopcion_extract para el dia:{previous_date}')
+    else:
+        print(f'No hay información en la base black_box.cartera para el dia:{previous_date}')
+
+
+# In[58]:
+
+
+validacion(previous_date)
+
+
+# In[59]:
+
+
+# df2=df2.set_index('info_day')
+# conteo_dvencido = df2['count'][previous_date]
+
+# if conteo_dvencido >= inferior and conteo_dvencido <= superior:
+#     print(f'El día: {previous_date}, pasa validación del número de cuentas a día vencido')
+#     LCD_SASSLF(previous_date)
+#     unload_LCD_SASSLF(previous_date)
+#     LCD_SASSLF_OFERTA(previous_date)
+#     LCD_SASSLF_OFERTA_CF(previous_date)
+#     presentacion(previous_date)
+# else:
+#     print('Pasa validación del número de cuentas a día vencido')
+#     print(f'revisar el conteo de cuentas para el dia:{previous_date}')
+
+
+# # Reporte de Blackbox.cartera
+
+# ## Generacion de reporte con profile de Blackbox.cartera
+
+# In[60]:
+
+
+# profile= ProfileReport(df3, minimal=True)
+# profile.to_file(output_file="Reporte_blackbox_cartera.html")
+
+
+# ## Comprobar que todas las cuentas de data_lake.bajas27sept tienen estatus false
+
+# In[61]:
+
+
+# def cuentas_no_estan(previous_date):
+#     query = f"""select cuenta
+#                 from data_lake.bajas27sept
+#                 where cuenta not in (select cuenta
+#                                      from public.LCD_SASSLF_{previous_date});"""
+#     conn = wr.redshift.connect("redshift_devsie")
+#     dfF_31 = wr.redshift.read_sql_query(query, conn)
+#     #print(f"facescan 0 e identificación null Total = {dfT_8['count'][0]}")
+#     return(dfF_31)
+
+
+# In[62]:
+
+
+#cuentas_no_estan(previous_date)
+
+
+# In[63]:
+
+
+# def estatus(previous_date):
+#     query = f"""select estatus__c
+#                 from(
+#                         select a.cuenta, a.estatus__c
+#                         from public.LCD_SASSLF_{previous_date} as a
+#                         join (select cuenta
+#                               from data_lake.bajas27sept ) as b
+#                         on a.cuenta=b.cuenta)
+#                 group by estatus__c;"""
+#     conn = wr.redshift.connect("redshift_devsie")
+#     dfF_32 = wr.redshift.read_sql_query(query, conn)
+#     #print(f"facescan 0 e identificación null Total = {dfT_8['count'][0]}")
+#     return(dfF_32)
+
+
+# In[64]:
+
+
+#estatus(previous_date)
+
+
+# In[ ]:
+
+
+
+
